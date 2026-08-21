@@ -199,6 +199,120 @@ class TokenizeTestCase(TestCase):
         self.assertFalse(result.stdout.strip())
         self.assertIn("Missing argument 'TEXT", result.stderr)
 
+    def test_tokens_location_must_exist(self):
+        # Run the command with an invalid tokens path
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pydiffuser.cli",
+                "tokenize",
+                PROMPT,
+                "--tokens",
+                "/no/such/path/tokens.json",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Invalid value for '--tokens'", result.stderr)
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
+    def test_mappings_location_must_exist(self):
+        # Run the command with an invalid mappings path
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pydiffuser.cli",
+                "tokenize",
+                PROMPT,
+                "--mappings",
+                "/no/such/path/mappings.json",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Invalid value for '--mappings'", result.stderr)
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
+    def test_tokenizer_path_must_exist(self):
+        # Run the command with a non-existent tokenizer path
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pydiffuser.cli",
+                "tokenize",
+                PROMPT,
+                "--tokenizer",
+                "/no/such/path/tokenizer",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Invalid value for '--tokenizer'", result.stderr)
+        self.assertIn(
+            "Directory '/no/such/path/tokenizer' does not exist", result.stderr
+        )
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
+    def test_tokenizer_must_be_valid(self):
+        # Create a tokenizer directory with an unreadable tokenizer
+        bad_tokenizer = self.test_dir / "bad_tokenizer"
+        bad_tokenizer.mkdir()
+        (bad_tokenizer / "tokenizer.json").write_text("{not json")
+
+        # Run the command with the unloadable tokenizer
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pydiffuser.cli",
+                "tokenize",
+                PROMPT,
+                "--tokenizer",
+                str(bad_tokenizer),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("is not a CLIP tokenizer", result.stderr)
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
 
 TOKENS = [
     [

@@ -11,6 +11,9 @@ def tokenize(
     text: str,
     clip_tokenizer: CLIPTokenizer | None = None,
 ) -> tuple[list[list[int]], list[list[tuple[str, int]]]]:
+    """Tokenizes the given text with a CLIP tokenizer. Tokens will be returned
+    as a list of list of token integers, and a mapping of substrings to their
+    integers to show how the original text was split into tokens."""
 
     tokenizer = clip_tokenizer or CLIPTokenizer.from_pretrained(TOKENIZER_DIR)
     tokens = _text_to_tokens(text, tokenizer)
