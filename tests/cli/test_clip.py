@@ -29,14 +29,18 @@ class TokenizeTestCase(TestCase):
         os.chdir(self.test_dir.parent)
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_create_tokens(self):
-        # Run the command with only the required arguments
-        result = subprocess.run(
-            [sys.executable, "-m", "pydiffuser.cli", "tokenize", PROMPT],
+    def run_command(self, *args, **kwargs):
+        params = [f"--{key}={value}" for key, value in kwargs.items()]
+        return subprocess.run(
+            [sys.executable, "-m", "pydiffuser.cli", "tokenize", *args, *params],
             capture_output=True,
             text=True,
             check=False,
         )
+
+    def test_create_tokens(self):
+        # Run the command with only the required arguments
+        result = self.run_command(PROMPT)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -60,20 +64,7 @@ class TokenizeTestCase(TestCase):
     def test_can_set_tokens_path(self):
         # Run the command with a custom tokens path
         tokens_path = self.test_dir / "custom_tokens.json"
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--tokens",
-                str(tokens_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, tokens=tokens_path)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -98,20 +89,7 @@ class TokenizeTestCase(TestCase):
     def test_can_set_mappings_path(self):
         # Run the command with a custom mappings path
         mappings_path = self.test_dir / "custom_mappings.json"
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--mappings",
-                str(mappings_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, mappings=mappings_path)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -150,20 +128,7 @@ class TokenizeTestCase(TestCase):
             json.dump(tokenizer_data, f)
 
         # Run the command with the custom tokenizer
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--tokenizer",
-                str(custom_tokenizer),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, tokenizer=custom_tokenizer)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -189,32 +154,21 @@ class TokenizeTestCase(TestCase):
         self.assertEqual(mappings, expected_mappings)
 
     def test_prompt_is_required(self):
-        result = subprocess.run(
-            [sys.executable, "-m", "pydiffuser.cli", "tokenize"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # Run the command with no arguments
+        result = self.run_command()
+
+        # Process failed
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Missing argument 'TEXT", result.stderr)
 
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
     def test_tokens_location_must_exist(self):
         # Run the command with an invalid tokens path
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--tokens",
-                "/no/such/path/tokens.json",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, tokens="/no/such/path/tokens.json")
 
         # Process failed
         self.assertEqual(result.returncode, 2)
@@ -228,20 +182,7 @@ class TokenizeTestCase(TestCase):
 
     def test_mappings_location_must_exist(self):
         # Run the command with an invalid mappings path
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--mappings",
-                "/no/such/path/mappings.json",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, mappings="/no/such/path/mappings.json")
 
         # Process failed
         self.assertEqual(result.returncode, 2)
@@ -255,20 +196,7 @@ class TokenizeTestCase(TestCase):
 
     def test_tokenizer_path_must_exist(self):
         # Run the command with a non-existent tokenizer path
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--tokenizer",
-                "/no/such/path/tokenizer",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, tokenizer="/no/such/path/tokenizer")
 
         # Process failed
         self.assertEqual(result.returncode, 2)
@@ -289,20 +217,7 @@ class TokenizeTestCase(TestCase):
         (bad_tokenizer / "tokenizer.json").write_text("{not json")
 
         # Run the command with the unloadable tokenizer
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--tokenizer",
-                str(bad_tokenizer),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, tokenizer=bad_tokenizer)
 
         # Process failed
         self.assertEqual(result.returncode, 1)
