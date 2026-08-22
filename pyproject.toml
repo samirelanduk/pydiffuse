@@ -54,7 +54,7 @@ torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 packages = ["src/pydiffuser"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "README.md", "LICENSE"]
+include = ["src", "README.md", "LICENSE"]
 
 [tool.ruff]
 line-length = 88
