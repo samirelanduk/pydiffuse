@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from unittest import TestCase
 
+import torch
+
 from pydiffuser.clip import TOKENIZER_DIR
 
 PROMPT = """
@@ -19,7 +21,7 @@ cinematic composition, epic landscape photography, wide angle lens, deep depth o
 """.strip()
 
 
-class TokenizeTestCase(TestCase):
+class ClipTestCase(TestCase):
     def setUp(self):
         self.test_dir = Path("test_dir").resolve()
         self.test_dir.mkdir(parents=True, exist_ok=True)
@@ -29,14 +31,19 @@ class TokenizeTestCase(TestCase):
         os.chdir(self.test_dir.parent)
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def run_command(self, *args, **kwargs):
+    def run_command(self, command, *args, **kwargs):
         params = [f"--{key}={value}" for key, value in kwargs.items()]
         return subprocess.run(
-            [sys.executable, "-m", "pydiffuser.cli", "tokenize", *args, *params],
+            [sys.executable, "-m", "pydiffuser.cli", command, *args, *params],
             capture_output=True,
             text=True,
             check=False,
         )
+
+
+class TokenizeTestCase(ClipTestCase):
+    def run_command(self, *args, **kwargs):
+        return super().run_command("tokenize", *args, **kwargs)
 
     def test_create_tokens(self):
         # Run the command with only the required arguments
@@ -227,6 +234,162 @@ class TokenizeTestCase(TestCase):
         # Files are not created
         self.assertFalse((self.test_dir / "tokens.json").exists())
         self.assertFalse((self.test_dir / "mappings.json").exists())
+
+
+class EmbedTestCase(ClipTestCase):
+    def setUp(self):
+        super().setUp()
+        self.model_path = (
+            Path(__file__).parent / "models" / "clip_embedding_model.safetensors"
+        )
+
+    def create_tokens(self):
+        """Create a token file input that uses the same small vocab used in the
+        toy test model."""
+
+        tokens = [
+            list(range(77)),
+            list(range(77, 100)) + [14 for _ in range(54)],
+            list(range(50, 61)) + [14 for _ in range(66)],
+        ]
+        tokens_path = self.test_dir / "tokens.json"
+        with open(tokens_path, "w") as f:
+            json.dump(tokens, f)
+        return tokens_path
+
+    def run_command(self, *args, **kwargs):
+        return super().run_command("embed", *args, **kwargs)
+
+    def test_create_embeddings(self):
+        # Run the command with only the required arguments
+        tokens_path = self.create_tokens()
+        result = self.run_command(tokens_path, self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "embedding.pt").exists())
+
+        # Embedding is correct
+        with open(self.test_dir / "embedding.pt", "rb") as f:
+            embedding = torch.load(f)
+        self.assertEqual(embedding.shape, (3, 77, 12))
+        self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
+        self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.082, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 11].item(), 0.025, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 0].item(), 0.534, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 11].item(), 1.369, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 11].item(), 0.025, places=3)
+
+    def test_can_set_embedding_path(self):
+        # Run the command with custom embedding path
+        tokens_path = self.create_tokens()
+        embedding_path = self.test_dir / "custom_embedding.pt"
+        result = self.run_command(
+            tokens_path, self.model_path, embedding=embedding_path
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(embedding_path.exists())
+
+        # Embedding is correct
+        with open(embedding_path, "rb") as f:
+            embedding = torch.load(f)
+        self.assertEqual(embedding.shape, (3, 77, 12))
+        self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
+        self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.082, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 11].item(), 0.025, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 0].item(), 0.534, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 11].item(), 1.369, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 11].item(), 0.025, places=3)
+
+    def test_tokens_is_required(self):
+        # Run the command with no tokens path
+        result = self.run_command(self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+    def test_tokens_location_must_exist(self):
+        # Run the command with an invalid tokens path
+        result = self.run_command("/no/such/path/tokens.json", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("File '/no/such/path/tokens.json' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+    def test_model_is_required(self):
+        # Run the command with no model path
+        result = self.run_command(self.create_tokens())
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+    def test_model_location_must_exist(self):
+        # Run the command with an invalid model path
+        result = self.run_command(
+            self.create_tokens(), "/no/such/path/model.safetensors"
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "File '/no/such/path/model.safetensors' does not exist", result.stderr
+        )
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+    def test_embedding_path_must_exist(self):
+        # Run the command with an invalid embedding path
+        result = self.run_command(
+            self.create_tokens(),
+            self.model_path,
+            embedding="/no/such/path/embedding.pt",
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
 
 
 TOKENS = [

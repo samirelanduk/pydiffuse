@@ -1,13 +1,18 @@
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
+import safetensors
+import torch
 from transformers import CLIPTokenizer
 
 from pydiffuser.clip import (
     TOKENIZER_DIR,
     _break_up_tokens,
+    _create_position_embedding,
+    _create_token_embedding,
     _create_token_string_mapping,
     _text_to_tokens,
+    embed,
     tokenize,
 )
 
@@ -65,6 +70,28 @@ class TokenizeTests(TestCase):
         mock_create_mapping.assert_called_once_with(
             mock_break_up.return_value, mock_from_pretrained.return_value
         )
+
+
+class EmbedTests(TestCase):
+    @patch("pydiffuser.clip._create_token_embedding")
+    @patch("pydiffuser.clip._create_position_embedding")
+    def test_embed(self, mock_position, mock_token):
+        tokens = [[0, 1, 2], [3, 4, 5]]
+        model = Mock(safetensors.safe_open)
+        mock_token.return_value = [10, 20]
+        mock_position.return_value = [30, 40]
+        result = embed(tokens, model)
+        self.assertEqual(mock_token.call_count, 1)
+        self.assertEqual(mock_token.call_args_list[0][0][0], model)
+        self.assertTrue(
+            torch.equal(mock_token.call_args_list[0][0][1], torch.tensor(tokens))
+        )
+        self.assertEqual(mock_position.call_count, 1)
+        self.assertEqual(mock_position.call_args_list[0][0][0], model)
+        self.assertTrue(
+            torch.equal(mock_position.call_args_list[0][0][1], torch.tensor(tokens))
+        )
+        self.assertEqual(result, [10, 20, 30, 40])
 
 
 class TextToTokensTests(TestCase):
@@ -147,3 +174,52 @@ class CreateTokenStringMappingTests(TestCase):
                 [("is", 595), ("coming", 14916)],
             ],
         )
+
+
+class CreateTokenEmbeddingTests(TestCase):
+    def test_creates_token_embedding(self):
+        tensors = MagicMock()
+        tensors.keys.return_value = [
+            "1",
+            "2",
+            "xxx.text_model.token_embedding.weight",
+            "3",
+        ]
+        tensors.get_tensor.return_value = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+        )
+        tokens = torch.tensor([[0, 2, 1]])
+        result = _create_token_embedding(tensors, tokens)
+        expected = torch.tensor([[[1.0, 2.0], [5.0, 6.0], [3.0, 4.0]]])
+        self.assertTrue(torch.equal(result, expected))
+
+    def test_raises_if_no_token_embedding(self):
+        tensors = MagicMock()
+        tensors.keys.return_value = ["something_else.weight"]
+        tokens = torch.tensor([[0, 1]])
+        with self.assertRaises(ValueError):
+            _create_token_embedding(tensors, tokens)
+
+
+class CreatePositionEmbeddingTests(TestCase):
+    def test_creates_position_embedding(self):
+        weight = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        tensors = MagicMock()
+        tensors.keys.return_value = [
+            "1",
+            "2",
+            "xxx.text_model.position_embedding.weight",
+            "3",
+        ]
+        tensors.get_tensor.return_value = weight
+        tokens = torch.tensor([[10, 20, 30]])
+        result = _create_position_embedding(tensors, tokens)
+        expected = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        self.assertTrue(torch.equal(result, expected))
+
+    def test_raises_if_no_position_embedding(self):
+        tensors = MagicMock()
+        tensors.keys.return_value = ["something_else.weight"]
+        tokens = torch.tensor([[0, 1]])
+        with self.assertRaises(ValueError):
+            _create_position_embedding(tensors, tokens)

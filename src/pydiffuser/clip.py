@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import safetensors
+import torch
 from transformers import CLIPTokenizer
 
 MAX_LENGTH = 77
@@ -20,6 +22,17 @@ def tokenize(
     tokens = _break_up_tokens(tokens, tokenizer)
     mappings = _create_token_string_mapping(tokens, tokenizer)
     return tokens, mappings
+
+
+def embed(tokens: list[list[int]], model: safetensors.safe_open) -> None:
+    """Takes a set of tokens and maps them to the correct embedding vectors for
+    this model. The model should contain the two relevant tensors, and match the
+    CLIP dictionary used during tokenization."""
+
+    tokens_tensor = torch.tensor(tokens)
+    token_vectors = _create_token_embedding(model, tokens_tensor)
+    position_vectors = _create_position_embedding(model, tokens_tensor)
+    return token_vectors + position_vectors
 
 
 def _text_to_tokens(text: str, clip_tokenizer: CLIPTokenizer) -> list[int]:
@@ -66,3 +79,39 @@ def _create_token_string_mapping(
         strings = clip_tokenizer.convert_ids_to_tokens(sub_list)
         mappings.append([(s, t) for t, s in zip(sub_list, strings)])
     return mappings
+
+
+def _create_token_embedding(
+    tensors: safetensors.safe_open,
+    tokens_tensor: torch.Tensor,
+) -> torch.Tensor:
+    """Finds the correct token embedding tensor in a model, and runs the tokens
+    through it."""
+
+    keys = tensors.keys()
+    for key in keys:
+        if key.endswith("token_embedding.weight"):
+            tensor = tensors.get_tensor(key)
+            token_embedding = torch.nn.Embedding(
+                num_embeddings=tensor.shape[0], embedding_dim=tensor.shape[1]
+            ).from_pretrained(tensor)
+            return token_embedding(tokens_tensor)
+    raise ValueError("Token embedding tensor not found in model")
+
+
+def _create_position_embedding(
+    tensors: safetensors.safe_open,
+    tokens_tensor: torch.Tensor,
+) -> torch.Tensor:
+    """Finds the correct position embedding tensor in a model, and runs each of
+    the positions from 0 to whatever the maximum position is through it."""
+
+    keys = tensors.keys()
+    for key in keys:
+        if key.endswith("position_embedding.weight"):
+            tensor = tensors.get_tensor(key)
+            position_embedding = torch.nn.Embedding(
+                num_embeddings=tensor.shape[0], embedding_dim=tensor.shape[1]
+            ).from_pretrained(tensor)
+            return position_embedding(torch.arange(tokens_tensor.shape[1]))
+    raise ValueError("Position embedding tensor not found in model")

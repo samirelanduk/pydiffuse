@@ -2,8 +2,11 @@ import json
 from pathlib import Path
 
 import click
+import torch
+from safetensors import safe_open
 from transformers import CLIPTokenizer
 
+from pydiffuser.clip import embed as clip_embed
 from pydiffuser.clip import tokenize as clip_tokenize
 
 
@@ -57,6 +60,26 @@ def tokenize(text, tokens, mappings, tokenizer):
         json.dump(token_lists, f)
     with open(mappings, "w") as f:
         json.dump(mapping_lists, f)
+
+
+@cli.command("embed")
+@click.argument("tokens", type=click.Path(exists=True, dir_okay=False))
+@click.argument("model", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--embedding",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="embedding.pt",
+    help="Path to save the embedding to.",
+)
+def embed(tokens, model, embedding):
+    """Embeds tokens using CLIP embedding weights from a model."""
+
+    with open(tokens) as f:
+        token_lists = json.load(f)
+    with safe_open(model, framework="pt", device="cpu") as tensors:
+        embedding_tensor = clip_embed(token_lists, tensors)
+    torch.save(embedding_tensor, embedding)
 
 
 if __name__ == "__main__":
