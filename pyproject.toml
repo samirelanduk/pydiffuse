@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "py-diffuser"
+name = "pydiffuse"
 version = "0.1.0"
 description = "A python library for generating media with diffusion."
 readme = "README.md"
@@ -32,12 +32,12 @@ dependencies = [
 ]
 
 [project.scripts]
-py-diffuser = "pydiffuser.cli:cli"
+pydiffuse = "pydiffuse.cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/samirelanduk/py-diffuser"
-Source = "https://github.com/samirelanduk/py-diffuser"
-Issues = "https://github.com/samirelanduk/py-diffuser/issues"
+Homepage = "https://github.com/samirelanduk/pydiffuse"
+Source = "https://github.com/samirelanduk/pydiffuse"
+Issues = "https://github.com/samirelanduk/pydiffuse/issues"
 
 [dependency-groups]
 dev = ["ruff==0.16.3", "pyright==1.1.411", "pre-commit==4.1.0"]
@@ -51,7 +51,7 @@ explicit = true
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pydiffuser"]
+packages = ["src/pydiffuse"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "README.md", "LICENSE"]

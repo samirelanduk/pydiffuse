@@ -8,7 +8,7 @@ from unittest import TestCase
 
 import torch
 
-from pydiffuser.clip import TOKENIZER_DIR
+from pydiffuse.clip import TOKENIZER_DIR
 
 PROMPT = """
 ancient weathered stone lighthouse on a jagged basalt cliff edge, late dusk, the last embers of golden hour breaking through fractured storm clouds, volumetric god rays streaming down onto a churning slate-grey sea.
@@ -34,7 +34,7 @@ class ClipTestCase(TestCase):
     def run_command(self, command, *args, **kwargs):
         params = [f"--{key}={value}" for key, value in kwargs.items()]
         return subprocess.run(
-            [sys.executable, "-m", "pydiffuser.cli", command, *args, *params],
+            [sys.executable, "-m", "pydiffuse.cli", command, *args, *params],
             capture_output=True,
             text=True,
             check=False,

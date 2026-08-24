@@ -1,7 +1,7 @@
-# py-diffuser
+# pydiffuse
 
-[![CI](https://img.shields.io/github/actions/workflow/status/samirelanduk/pydiffuser/ci.yml?branch=master&logo=github&label=CI)](https://github.com/samirelanduk/pydiffuser/actions/workflows/ci.yml)
-[![Python versions](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://github.com/samirelanduk/pydiffuser/blob/master/pyproject.toml)
+[![CI](https://img.shields.io/github/actions/workflow/status/samirelanduk/pydiffuse/ci.yml?branch=master&logo=github&label=CI)](https://github.com/samirelanduk/pydiffuse/actions/workflows/ci.yml)
+[![Python versions](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://github.com/samirelanduk/pydiffuse/blob/master/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -14,8 +14,8 @@ A python library for generating media with diffusion.
 The project uses [uv](https://docs.astral.sh/uv/). With it installed:
 
 ```bash
-git clone git@github.com:samirelanduk/pydiffuser.git
-cd pydiffuser
+git clone git@github.com:samirelanduk/pydiffuse.git
+cd pydiffuse
 uv sync
 pre-commit install
 ```
@@ -36,7 +36,7 @@ uv run pre-commit run --all-files
 The library exposes most of its functionality as a Command-Line Interface.
 
 ```bash
-py-diffuser <command>
+pydiffuse <command>
 ```
 
 ### CLIP
@@ -52,7 +52,7 @@ The embedding and encoding steps need model weights in [safetensors](https://git
 `tokenize` converts a prompt into the integer token IDs that CLIP uses.
 
 ```bash
-py-diffuser tokenize "a photo of a lighthouse"
+pydiffuse tokenize "a photo of a lighthouse"
 ```
 
 This writes two files.
@@ -82,7 +82,7 @@ The library bundles the standard CLIP tokenizer, so `--tokenizer` is only needed
 The result represents each token in isolation, with no context from the rest of the prompt.
 
 ```bash
-py-diffuser embed tokens.json model.safetensors
+pydiffuse embed tokens.json model.safetensors
 ```
 
 This writes `embedding.pt`, a `torch.save`-d tensor of shape `(chunks, 77, width)`, where `width` is the embedding width of the model (768 for Stable Diffusion 1.x).
@@ -98,7 +98,7 @@ The model must contain tensors whose keys end in `token_embedding.weight` and `p
 This is the conditioning that gets fed to a diffusion model.
 
 ```bash
-py-diffuser encode embedding.pt model.safetensors
+pydiffuse encode embedding.pt model.safetensors
 ```
 
 This writes `conditioning.pt`, a tensor of the same shape as the embedding.

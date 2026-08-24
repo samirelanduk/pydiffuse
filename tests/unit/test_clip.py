@@ -5,7 +5,7 @@ import safetensors
 import torch
 from transformers import CLIPTokenizer
 
-from pydiffuser.clip import (
+from pydiffuse.clip import (
     TOKENIZER_DIR,
     _apply_attention,
     _apply_mlp,
@@ -25,9 +25,9 @@ from pydiffuser.clip import (
 
 
 class TokenizeTests(TestCase):
-    @patch("pydiffuser.clip._text_to_tokens")
-    @patch("pydiffuser.clip._break_up_tokens")
-    @patch("pydiffuser.clip._create_token_string_mapping")
+    @patch("pydiffuse.clip._text_to_tokens")
+    @patch("pydiffuse.clip._break_up_tokens")
+    @patch("pydiffuse.clip._create_token_string_mapping")
     def test_tokenize_custom_tokenizer(
         self,
         mock_create_mapping,
@@ -50,10 +50,10 @@ class TokenizeTests(TestCase):
         self.assertEqual(tokens, mock_break_up.return_value)
         self.assertEqual(mappings, mock_create_mapping.return_value)
 
-    @patch("pydiffuser.clip.CLIPTokenizer.from_pretrained")
-    @patch("pydiffuser.clip._text_to_tokens")
-    @patch("pydiffuser.clip._break_up_tokens")
-    @patch("pydiffuser.clip._create_token_string_mapping")
+    @patch("pydiffuse.clip.CLIPTokenizer.from_pretrained")
+    @patch("pydiffuse.clip._text_to_tokens")
+    @patch("pydiffuse.clip._break_up_tokens")
+    @patch("pydiffuse.clip._create_token_string_mapping")
     def test_tokenize_default_tokenizer(
         self,
         mock_create_mapping,
@@ -80,8 +80,8 @@ class TokenizeTests(TestCase):
 
 
 class EmbedTests(TestCase):
-    @patch("pydiffuser.clip._create_token_embedding")
-    @patch("pydiffuser.clip._create_position_embedding")
+    @patch("pydiffuse.clip._create_token_embedding")
+    @patch("pydiffuse.clip._create_position_embedding")
     def test_embed(self, mock_position, mock_token):
         tokens = [[0, 1, 2], [3, 4, 5]]
         model = Mock(safetensors.safe_open)
@@ -102,12 +102,12 @@ class EmbedTests(TestCase):
 
 
 class EncodeTests(TestCase):
-    @patch("pydiffuser.clip.layer_norm")
-    @patch("pydiffuser.clip._get_norm_tensors")
-    @patch("pydiffuser.clip._apply_mlp")
-    @patch("pydiffuser.clip._apply_attention")
-    @patch("pydiffuser.clip._get_layer_tensors")
-    @patch("pydiffuser.clip._get_clip_mask")
+    @patch("pydiffuse.clip.layer_norm")
+    @patch("pydiffuse.clip._get_norm_tensors")
+    @patch("pydiffuse.clip._apply_mlp")
+    @patch("pydiffuse.clip._apply_attention")
+    @patch("pydiffuse.clip._get_layer_tensors")
+    @patch("pydiffuse.clip._get_clip_mask")
     def test_encode(
         self,
         mock_get_mask,
@@ -307,7 +307,7 @@ class GetClipMaskTests(TestCase):
 
 
 class GetLayerTensorsTests(TestCase):
-    @patch("pydiffuser.clip._get_encoder_layer_numbers")
+    @patch("pydiffuse.clip._get_encoder_layer_numbers")
     def test_get_layer_tensors(self, mock_get_layer_numbers):
         mock_get_layer_numbers.return_value = [3, 4, 5]
         tensors = MagicMock()
@@ -429,7 +429,7 @@ class GetLayerTensorsTests(TestCase):
             },
         )
 
-    @patch("pydiffuser.clip._get_encoder_layer_numbers")
+    @patch("pydiffuse.clip._get_encoder_layer_numbers")
     def test_all_layers_must_be_present(self, mock_get_layer_numbers):
         mock_get_layer_numbers.return_value = [3, 4, 5]
         tensors = MagicMock()
@@ -510,8 +510,8 @@ class GetEncoderLayerNumbersTests(TestCase):
 
 
 class ApplyAttentionTests(TestCase):
-    @patch("pydiffuser.clip.layer_norm")
-    @patch("pydiffuser.clip.linear")
+    @patch("pydiffuse.clip.layer_norm")
+    @patch("pydiffuse.clip.linear")
     def test_can_apply_attention(self, mock_linear, mock_norm):
         conditioning = torch.tensor(
             [
@@ -922,8 +922,8 @@ class ApplyAttentionTests(TestCase):
 
 
 class ApplyMlpTests(TestCase):
-    @patch("pydiffuser.clip.layer_norm")
-    @patch("pydiffuser.clip.linear")
+    @patch("pydiffuse.clip.layer_norm")
+    @patch("pydiffuse.clip.linear")
     def test_can_apply_mlp(self, mock_linear, mock_norm):
         conditioning = torch.tensor([[100.0, 200.0, 300.0], [400.0, 500.0, 600.0]])
         tensors = {

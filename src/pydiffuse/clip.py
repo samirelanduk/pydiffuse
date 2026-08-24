@@ -5,7 +5,7 @@ import safetensors
 import torch
 from transformers import CLIPTokenizer
 
-from pydiffuser.layers import layer_norm, linear
+from pydiffuse.layers import layer_norm, linear
 
 MAX_LENGTH = 77
 

@@ -2,7 +2,7 @@ from unittest import TestCase
 
 import torch
 
-from pydiffuser.layers import convolution, group_norm, layer_norm, linear
+from pydiffuse.layers import convolution, group_norm, layer_norm, linear
 
 
 class LinearLayerTests(TestCase):

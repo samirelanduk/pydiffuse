@@ -6,9 +6,9 @@ import torch
 from safetensors import safe_open
 from transformers import CLIPTokenizer
 
-from pydiffuser.clip import embed as clip_embed
-from pydiffuser.clip import encode as clip_encode
-from pydiffuser.clip import tokenize as clip_tokenize
+from pydiffuse.clip import embed as clip_embed
+from pydiffuse.clip import encode as clip_encode
+from pydiffuse.clip import tokenize as clip_tokenize
 
 
 @click.group()
