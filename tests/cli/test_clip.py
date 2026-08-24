@@ -392,6 +392,138 @@ class EmbedTestCase(ClipTestCase):
         self.assertFalse((self.test_dir / "embedding.pt").exists())
 
 
+class EncodeTestCase(ClipTestCase):
+    def setUp(self):
+        super().setUp()
+        self.embedding_path = Path(__file__).parent / "data" / "embedding.pt"
+        self.model_path = (
+            Path(__file__).parent / "models" / "clip_encode_model.safetensors"
+        )
+
+    def run_command(self, *args, **kwargs):
+        return super().run_command("encode", *args, **kwargs)
+
+    def check_conditioning(self, conditioning):
+        self.assertEqual(conditioning.shape, (3, 77, 12))
+        self.assertEqual(round(conditioning[0, 0, 0].item(), 3), 0.698)
+        self.assertEqual(round(conditioning[0, 0, 11].item(), 3), -0.011)
+        self.assertEqual(round(conditioning[0, 76, 0].item(), 3), 0.556)
+        self.assertEqual(round(conditioning[0, 76, 11].item(), 3), -0.601)
+        self.assertEqual(round(conditioning[1, 0, 0].item(), 3), 0.541)
+        self.assertEqual(round(conditioning[1, 0, 11].item(), 3), -0.075)
+        self.assertEqual(round(conditioning[1, 76, 0].item(), 3), 0.938)
+        self.assertEqual(round(conditioning[1, 76, 11].item(), 3), 0.45)
+        self.assertEqual(round(conditioning[2, 0, 0].item(), 3), -0.292)
+        self.assertEqual(round(conditioning[2, 0, 11].item(), 3), 0.289)
+        self.assertEqual(round(conditioning[2, 76, 0].item(), 3), 0.575)
+        self.assertEqual(round(conditioning[2, 76, 11].item(), 3), -0.85)
+
+    def test_create_encoding(self):
+        # Run the command with only the required arguments
+        result = self.run_command(self.embedding_path, self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "conditioning.pt").exists())
+
+        # Encoding is correct
+        with open(self.test_dir / "conditioning.pt", "rb") as f:
+            conditioning = torch.load(f)
+        self.check_conditioning(conditioning)
+
+    def test_can_set_conditioning_path(self):
+        # Run the command with a custom conditioning path
+        conditioning_path = self.test_dir / "custom_conditioning.pt"
+        result = self.run_command(
+            self.embedding_path, self.model_path, conditioning=conditioning_path
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(conditioning_path.exists())
+
+        # Conditioning is correct
+        with open(conditioning_path, "rb") as f:
+            conditioning = torch.load(f)
+        self.check_conditioning(conditioning)
+
+    def test_embedding_is_required(self):
+        # Run the command with no embedding path
+        result = self.run_command(self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    def test_embedding_location_must_exist(self):
+        # Run the command with an invalid embedding path
+        result = self.run_command("/no/such/path/embedding.pt", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("File '/no/such/path/embedding.pt' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    def test_model_is_required(self):
+        # Run the command with no model path
+        result = self.run_command(self.embedding_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    def test_model_location_must_exist(self):
+        # Run the command with an invalid model path
+        result = self.run_command(
+            self.embedding_path, "/no/such/path/model.safetensors"
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "File '/no/such/path/model.safetensors' does not exist", result.stderr
+        )
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    def test_conditioning_location_must_exist(self):
+        # Run the command with an invalid conditioning path
+        result = self.run_command(
+            self.embedding_path,
+            self.model_path,
+            conditioning="/no/such/path/conditioning.pt",
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+
 TOKENS = [
     [
         49406,

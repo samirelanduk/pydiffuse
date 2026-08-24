@@ -7,6 +7,7 @@ from safetensors import safe_open
 from transformers import CLIPTokenizer
 
 from pydiffuser.clip import embed as clip_embed
+from pydiffuser.clip import encode as clip_encode
 from pydiffuser.clip import tokenize as clip_tokenize
 
 
@@ -80,6 +81,25 @@ def embed(tokens, model, embedding):
     with safe_open(model, framework="pt", device="cpu") as tensors:
         embedding_tensor = clip_embed(token_lists, tensors)
     torch.save(embedding_tensor, embedding)
+
+
+@cli.command("encode")
+@click.argument("embedding", type=click.Path(exists=True, dir_okay=False))
+@click.argument("model", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--conditioning",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="conditioning.pt",
+    help="Path to save the conditioning to.",
+)
+def encode(embedding, model, conditioning):
+    """Encodes embeddings using CLIP encoder weights from a model."""
+
+    embedding_tensor = torch.load(embedding)
+    with safe_open(model, framework="pt", device="cpu") as tensors:
+        conditioning_tensor = clip_encode(embedding_tensor, tensors)
+    torch.save(conditioning_tensor, conditioning)
 
 
 if __name__ == "__main__":
