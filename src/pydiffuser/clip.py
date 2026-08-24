@@ -27,7 +27,7 @@ def tokenize(
     return tokens, mappings
 
 
-def embed(tokens: list[list[int]], model: safetensors.safe_open) -> None:
+def embed(tokens: list[list[int]], model: safetensors.safe_open) -> torch.Tensor:
     """Takes a set of tokens and maps them to the correct embedding vectors for
     this model. The model should contain the two relevant tensors, and match the
     CLIP dictionary used during tokenization."""
@@ -38,7 +38,7 @@ def embed(tokens: list[list[int]], model: safetensors.safe_open) -> None:
     return token_vectors + position_vectors
 
 
-def encode(embedding: torch.Tensor, model: safetensors.safe_open) -> None:
+def encode(embedding: torch.Tensor, model: safetensors.safe_open) -> torch.Tensor:
     """Takes a set of embedding vectors, and produces a tensor of the same shape
     which represents the semanting meaning of each token. The model should
     contain all required tensors for each layer of this process, though it can
