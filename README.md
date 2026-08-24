@@ -1,5 +1,6 @@
 # pydiffuse
 
+[![PyPI](https://img.shields.io/pypi/v/pydiffuse?logo=pypi&logoColor=white)](https://pypi.org/project/pydiffuse/)
 [![CI](https://img.shields.io/github/actions/workflow/status/samirelanduk/pydiffuse/ci.yml?branch=master&logo=github&label=CI)](https://github.com/samirelanduk/pydiffuse/actions/workflows/ci.yml)
 [![Python versions](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://github.com/samirelanduk/pydiffuse/blob/master/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
