@@ -2,7 +2,7 @@ from unittest import TestCase
 
 import torch
 
-from pydiffuser.layers import convolution, group_norm, linear
+from pydiffuse.layers import convolution, group_norm, layer_norm, linear
 
 
 class LinearLayerTests(TestCase):
@@ -55,6 +55,55 @@ class GroupNormLayerTests(TestCase):
                     [
                         [87.7526, 200.0000, 336.7421, 351.0106, 500.0000, 673.4841],
                         [89.3096, 194.6548, 340.0891, 357.2382, 486.6370, 680.1783],
+                    ]
+                ),
+            )
+        )
+
+
+class LayerNormLayerTests(TestCase):
+    def test_layer_norm_layer(self):
+        input = torch.tensor(
+            [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2.0, 4.0, 8.0, 16.0, 32.0, 64.0]]
+        )
+        weights = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])
+        bias = torch.tensor([100.0, 200.0, 300.0, 400.0, 500.0, 600.0])
+        output = layer_norm(weights, bias, input)
+        self.assertTrue(
+            torch.allclose(
+                output,
+                torch.tensor(
+                    [
+                        [85.3615, 182.4338, 291.2169, 411.7108, 543.9154, 687.8309],
+                        [91.2266, 184.3003, 281.9915, 390.7649, 525.3966, 719.1333],
+                    ]
+                ),
+            )
+        )
+
+    def test_layer_norm_layer_sequence_input(self):
+        input = torch.tensor(
+            [
+                [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+                [[2.0, 4.0, 8.0, 16.0], [1.0, 1.0, 1.0, 1.0]],
+            ]
+        )
+        weights = torch.tensor([10.0, 20.0, 30.0, 40.0])
+        bias = torch.tensor([100.0, 200.0, 300.0, 400.0])
+        output = layer_norm(weights, bias, input)
+        self.assertTrue(
+            torch.allclose(
+                output,
+                torch.tensor(
+                    [
+                        [
+                            [86.5836, 191.0558, 313.4164, 453.6654],
+                            [86.5836, 191.0558, 313.4164, 453.6654],
+                        ],
+                        [
+                            [89.7424, 186.9449, 302.7975, 463.4103],
+                            [100.0000, 200.0000, 300.0000, 400.0000],
+                        ],
                     ]
                 ),
             )

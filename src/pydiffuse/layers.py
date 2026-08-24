@@ -37,6 +37,23 @@ def group_norm(
     return layer(input)
 
 
+def layer_norm(
+    weight: torch.Tensor, bias: torch.Tensor, input: torch.Tensor
+) -> torch.Tensor:
+    """Applies a layer normalization to the incoming data. Each vector in the
+    final dimension is adjusted so that its mean is 0 and its variance is 1,
+    while preserving the relative gaps between the values. It then scales the
+    values by the weight and adds the bias.
+
+    The weight and bias must be 1D tensors of dimensions (num_features). The
+    result is a tensor of the same shape as the input."""
+
+    layer = torch.nn.LayerNorm(weight.shape[0], device="cpu")
+    layer.weight = torch.nn.Parameter(weight, requires_grad=False)
+    layer.bias = torch.nn.Parameter(bias, requires_grad=False)
+    return layer(input)
+
+
 def convolution(
     weight: torch.Tensor,
     bias: torch.Tensor,

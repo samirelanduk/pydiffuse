@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 from unittest import TestCase
 
-from pydiffuser.clip import TOKENIZER_DIR
+import torch
+
+from pydiffuse.clip import TOKENIZER_DIR
 
 PROMPT = """
 ancient weathered stone lighthouse on a jagged basalt cliff edge, late dusk, the last embers of golden hour breaking through fractured storm clouds, volumetric god rays streaming down onto a churning slate-grey sea.
@@ -19,7 +21,7 @@ cinematic composition, epic landscape photography, wide angle lens, deep depth o
 """.strip()
 
 
-class TokenizeTestCase(TestCase):
+class ClipTestCase(TestCase):
     def setUp(self):
         self.test_dir = Path("test_dir").resolve()
         self.test_dir.mkdir(parents=True, exist_ok=True)
@@ -29,14 +31,23 @@ class TokenizeTestCase(TestCase):
         os.chdir(self.test_dir.parent)
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_create_tokens(self):
-        # Run the command with only the required arguments
-        result = subprocess.run(
-            [sys.executable, "-m", "pydiffuser.cli", "tokenize", PROMPT],
+    def run_command(self, command, *args, **kwargs):
+        params = [f"--{key}={value}" for key, value in kwargs.items()]
+        return subprocess.run(
+            [sys.executable, "-m", "pydiffuse.cli", command, *args, *params],
             capture_output=True,
             text=True,
             check=False,
         )
+
+
+class TokenizeTestCase(ClipTestCase):
+    def run_command(self, *args, **kwargs):
+        return super().run_command("tokenize", *args, **kwargs)
+
+    def test_create_tokens(self):
+        # Run the command with only the required arguments
+        result = self.run_command(PROMPT)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -60,20 +71,7 @@ class TokenizeTestCase(TestCase):
     def test_can_set_tokens_path(self):
         # Run the command with a custom tokens path
         tokens_path = self.test_dir / "custom_tokens.json"
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--tokens",
-                str(tokens_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, tokens=tokens_path)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -98,20 +96,7 @@ class TokenizeTestCase(TestCase):
     def test_can_set_mappings_path(self):
         # Run the command with a custom mappings path
         mappings_path = self.test_dir / "custom_mappings.json"
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--mappings",
-                str(mappings_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, mappings=mappings_path)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -150,20 +135,7 @@ class TokenizeTestCase(TestCase):
             json.dump(tokenizer_data, f)
 
         # Run the command with the custom tokenizer
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pydiffuser.cli",
-                "tokenize",
-                PROMPT,
-                "--tokenizer",
-                str(custom_tokenizer),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self.run_command(PROMPT, tokenizer=custom_tokenizer)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -189,15 +161,367 @@ class TokenizeTestCase(TestCase):
         self.assertEqual(mappings, expected_mappings)
 
     def test_prompt_is_required(self):
-        result = subprocess.run(
-            [sys.executable, "-m", "pydiffuser.cli", "tokenize"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # Run the command with no arguments
+        result = self.run_command()
+
+        # Process failed
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Missing argument 'TEXT", result.stderr)
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
+    def test_tokens_location_must_exist(self):
+        # Run the command with an invalid tokens path
+        result = self.run_command(PROMPT, tokens="/no/such/path/tokens.json")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Invalid value for '--tokens'", result.stderr)
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
+    def test_mappings_location_must_exist(self):
+        # Run the command with an invalid mappings path
+        result = self.run_command(PROMPT, mappings="/no/such/path/mappings.json")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Invalid value for '--mappings'", result.stderr)
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
+    def test_tokenizer_path_must_exist(self):
+        # Run the command with a non-existent tokenizer path
+        result = self.run_command(PROMPT, tokenizer="/no/such/path/tokenizer")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Invalid value for '--tokenizer'", result.stderr)
+        self.assertIn(
+            "Directory '/no/such/path/tokenizer' does not exist", result.stderr
+        )
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
+    def test_tokenizer_must_be_valid(self):
+        # Create a tokenizer directory with an unreadable tokenizer
+        bad_tokenizer = self.test_dir / "bad_tokenizer"
+        bad_tokenizer.mkdir()
+        (bad_tokenizer / "tokenizer.json").write_text("{not json")
+
+        # Run the command with the unloadable tokenizer
+        result = self.run_command(PROMPT, tokenizer=bad_tokenizer)
+
+        # Process failed
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("is not a CLIP tokenizer", result.stderr)
+
+        # Files are not created
+        self.assertFalse((self.test_dir / "tokens.json").exists())
+        self.assertFalse((self.test_dir / "mappings.json").exists())
+
+
+class EmbedTestCase(ClipTestCase):
+    def setUp(self):
+        super().setUp()
+        self.model_path = (
+            Path(__file__).parent / "models" / "clip_embedding_model.safetensors"
+        )
+
+    def create_tokens(self):
+        """Create a token file input that uses the same small vocab used in the
+        toy test model."""
+
+        tokens = [
+            list(range(77)),
+            list(range(77, 100)) + [14 for _ in range(54)],
+            list(range(50, 61)) + [14 for _ in range(66)],
+        ]
+        tokens_path = self.test_dir / "tokens.json"
+        with open(tokens_path, "w") as f:
+            json.dump(tokens, f)
+        return tokens_path
+
+    def run_command(self, *args, **kwargs):
+        return super().run_command("embed", *args, **kwargs)
+
+    def test_create_embeddings(self):
+        # Run the command with only the required arguments
+        tokens_path = self.create_tokens()
+        result = self.run_command(tokens_path, self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "embedding.pt").exists())
+
+        # Embedding is correct
+        with open(self.test_dir / "embedding.pt", "rb") as f:
+            embedding = torch.load(f)
+        self.assertEqual(embedding.shape, (3, 77, 12))
+        self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
+        self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.082, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 11].item(), 0.025, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 0].item(), 0.534, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 11].item(), 1.369, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 11].item(), 0.025, places=3)
+
+    def test_can_set_embedding_path(self):
+        # Run the command with custom embedding path
+        tokens_path = self.create_tokens()
+        embedding_path = self.test_dir / "custom_embedding.pt"
+        result = self.run_command(
+            tokens_path, self.model_path, embedding=embedding_path
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(embedding_path.exists())
+
+        # Embedding is correct
+        with open(embedding_path, "rb") as f:
+            embedding = torch.load(f)
+        self.assertEqual(embedding.shape, (3, 77, 12))
+        self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
+        self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.082, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 11].item(), 0.025, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 0].item(), 0.534, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 11].item(), 1.369, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 11].item(), 0.025, places=3)
+
+    def test_tokens_is_required(self):
+        # Run the command with no tokens path
+        result = self.run_command(self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+    def test_tokens_location_must_exist(self):
+        # Run the command with an invalid tokens path
+        result = self.run_command("/no/such/path/tokens.json", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("File '/no/such/path/tokens.json' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+    def test_model_is_required(self):
+        # Run the command with no model path
+        result = self.run_command(self.create_tokens())
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+    def test_model_location_must_exist(self):
+        # Run the command with an invalid model path
+        result = self.run_command(
+            self.create_tokens(), "/no/such/path/model.safetensors"
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "File '/no/such/path/model.safetensors' does not exist", result.stderr
+        )
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+    def test_embedding_path_must_exist(self):
+        # Run the command with an invalid embedding path
+        result = self.run_command(
+            self.create_tokens(),
+            self.model_path,
+            embedding="/no/such/path/embedding.pt",
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
+
+class EncodeTestCase(ClipTestCase):
+    def setUp(self):
+        super().setUp()
+        self.embedding_path = Path(__file__).parent / "data" / "embedding.pt"
+        self.model_path = (
+            Path(__file__).parent / "models" / "clip_encode_model.safetensors"
+        )
+
+    def run_command(self, *args, **kwargs):
+        return super().run_command("encode", *args, **kwargs)
+
+    def check_conditioning(self, conditioning):
+        self.assertEqual(conditioning.shape, (3, 77, 12))
+        self.assertEqual(round(conditioning[0, 0, 0].item(), 3), 0.698)
+        self.assertEqual(round(conditioning[0, 0, 11].item(), 3), -0.011)
+        self.assertEqual(round(conditioning[0, 76, 0].item(), 3), 0.556)
+        self.assertEqual(round(conditioning[0, 76, 11].item(), 3), -0.601)
+        self.assertEqual(round(conditioning[1, 0, 0].item(), 3), 0.541)
+        self.assertEqual(round(conditioning[1, 0, 11].item(), 3), -0.075)
+        self.assertEqual(round(conditioning[1, 76, 0].item(), 3), 0.938)
+        self.assertEqual(round(conditioning[1, 76, 11].item(), 3), 0.45)
+        self.assertEqual(round(conditioning[2, 0, 0].item(), 3), -0.292)
+        self.assertEqual(round(conditioning[2, 0, 11].item(), 3), 0.289)
+        self.assertEqual(round(conditioning[2, 76, 0].item(), 3), 0.575)
+        self.assertEqual(round(conditioning[2, 76, 11].item(), 3), -0.85)
+
+    def test_create_encoding(self):
+        # Run the command with only the required arguments
+        result = self.run_command(self.embedding_path, self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "conditioning.pt").exists())
+
+        # Encoding is correct
+        with open(self.test_dir / "conditioning.pt", "rb") as f:
+            conditioning = torch.load(f)
+        self.check_conditioning(conditioning)
+
+    def test_can_set_conditioning_path(self):
+        # Run the command with a custom conditioning path
+        conditioning_path = self.test_dir / "custom_conditioning.pt"
+        result = self.run_command(
+            self.embedding_path, self.model_path, conditioning=conditioning_path
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(conditioning_path.exists())
+
+        # Conditioning is correct
+        with open(conditioning_path, "rb") as f:
+            conditioning = torch.load(f)
+        self.check_conditioning(conditioning)
+
+    def test_embedding_is_required(self):
+        # Run the command with no embedding path
+        result = self.run_command(self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    def test_embedding_location_must_exist(self):
+        # Run the command with an invalid embedding path
+        result = self.run_command("/no/such/path/embedding.pt", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("File '/no/such/path/embedding.pt' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    def test_model_is_required(self):
+        # Run the command with no model path
+        result = self.run_command(self.embedding_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    def test_model_location_must_exist(self):
+        # Run the command with an invalid model path
+        result = self.run_command(
+            self.embedding_path, "/no/such/path/model.safetensors"
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "File '/no/such/path/model.safetensors' does not exist", result.stderr
+        )
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    def test_conditioning_location_must_exist(self):
+        # Run the command with an invalid conditioning path
+        result = self.run_command(
+            self.embedding_path,
+            self.model_path,
+            conditioning="/no/such/path/conditioning.pt",
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
 
 
 TOKENS = [
