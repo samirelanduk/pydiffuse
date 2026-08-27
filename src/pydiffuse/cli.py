@@ -16,6 +16,11 @@ def cli():
     pass
 
 
+@cli.group()
+def clip():
+    """CLIP text encoding commands."""
+
+
 def check_parent(ctx, param, value):
     """Rejects an output file whose containing directory doesn't exist."""
 
@@ -25,7 +30,7 @@ def check_parent(ctx, param, value):
     return value
 
 
-@cli.command()
+@clip.command()
 @click.argument("text")
 @click.option(
     "--tokens",
@@ -63,7 +68,7 @@ def tokenize(text, tokens, mappings, tokenizer):
         json.dump(mapping_lists, f)
 
 
-@cli.command("embed")
+@clip.command("embed")
 @click.argument("tokens", type=click.Path(exists=True, dir_okay=False))
 @click.argument("model", type=click.Path(exists=True, dir_okay=False))
 @click.option(
@@ -83,7 +88,7 @@ def embed(tokens, model, embedding):
     torch.save(embedding_tensor, embedding)
 
 
-@cli.command("encode")
+@clip.command("encode")
 @click.argument("embedding", type=click.Path(exists=True, dir_okay=False))
 @click.argument("model", type=click.Path(exists=True, dir_okay=False))
 @click.option(

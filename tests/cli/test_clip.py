@@ -34,7 +34,7 @@ class ClipTestCase(TestCase):
     def run_command(self, command, *args, **kwargs):
         params = [f"--{key}={value}" for key, value in kwargs.items()]
         return subprocess.run(
-            [sys.executable, "-m", "pydiffuse.cli", command, *args, *params],
+            [sys.executable, "-m", "pydiffuse.cli", "clip", command, *args, *params],
             capture_output=True,
             text=True,
             check=False,

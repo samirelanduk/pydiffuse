@@ -37,8 +37,10 @@ uv run pre-commit run --all-files
 The library exposes most of its functionality as a Command-Line Interface.
 
 ```bash
-pydiffuse <command>
+pydiffuse <group> <command>
 ```
+
+Commands are namespaced by group - currently `clip` and `vae`.
 
 ### CLIP
 
@@ -50,10 +52,10 @@ The embedding and encoding steps need model weights in [safetensors](https://git
 
 #### Tokenising
 
-`tokenize` converts a prompt into the integer token IDs that CLIP uses.
+`clip tokenize` converts a prompt into the integer token IDs that CLIP uses.
 
 ```bash
-pydiffuse tokenize "a photo of a lighthouse"
+pydiffuse clip tokenize "a photo of a lighthouse"
 ```
 
 This writes two files.
@@ -79,11 +81,11 @@ The library bundles the standard CLIP tokenizer, so `--tokenizer` is only needed
 
 #### Embedding
 
-`embed` looks up the vector for each token, and adds the vector for its position in the chunk.
+`clip embed` looks up the vector for each token, and adds the vector for its position in the chunk.
 The result represents each token in isolation, with no context from the rest of the prompt.
 
 ```bash
-pydiffuse embed tokens.json model.safetensors
+pydiffuse clip embed tokens.json model.safetensors
 ```
 
 This writes `embedding.pt`, a `torch.save`-d tensor of shape `(chunks, 77, width)`, where `width` is the embedding width of the model (768 for Stable Diffusion 1.x).
@@ -95,11 +97,11 @@ The model must contain tensors whose keys end in `token_embedding.weight` and `p
 
 #### Encoding
 
-`encode` runs the embeddings through the CLIP transformer layers, so that each vector is adjusted by the tokens before it.
+`clip encode` runs the embeddings through the CLIP transformer layers, so that each vector is adjusted by the tokens before it.
 This is the conditioning that gets fed to a diffusion model.
 
 ```bash
-pydiffuse encode embedding.pt model.safetensors
+pydiffuse clip encode embedding.pt model.safetensors
 ```
 
 This writes `conditioning.pt`, a tensor of the same shape as the embedding.
