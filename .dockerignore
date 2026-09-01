@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+.ruff_cache
+.vscode
+.DS_Store
+dist
+docs
+outputs
+tests
+*.pt
+*.safetensors
+__pycache__
+**/__pycache__
