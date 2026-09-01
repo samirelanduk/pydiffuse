@@ -6,9 +6,11 @@ from PIL import Image
 
 from .layers import convolution, group_norm, silu
 
-ENCODER_PREFIX = "first_stage_model.encoder"
+MODEL_PREFIX = "first_stage_model"
+ENCODER_PREFIX = f"{MODEL_PREFIX}.encoder"
 RESNET_LAYERS = ("norm1", "conv1", "norm2", "conv2", "nin_shortcut")
 ATTENTION_LAYERS = ("norm", "q", "k", "v", "proj_out")
+OUT_LAYERS = ("norm_out", "conv_out")
 DOWNSCALE_RATIO = 8
 CONV_IN_PADDING = 1
 CONV_PADDING = 1
@@ -29,6 +31,13 @@ def encode(image: Image.Image, model: safetensors.safe_open):
     )
     x = _encode_down(x, model_tensors["down"])
     x = _encode_mid(x, model_tensors["mid"])
+    x = _encode_out(x, model_tensors["out"])
+    x = convolution(
+        model_tensors["quant_conv"]["weight"],
+        model_tensors["quant_conv"]["bias"],
+        x,
+    )
+    x = x.narrow(1, 0, x.shape[1] // 2)
     return x
 
 
@@ -51,7 +60,7 @@ def _image_to_tensor(image: Image.Image) -> torch.Tensor:
 
 
 def _get_tensors(model: safetensors.safe_open) -> dict:
-    """Finds the tensors used in VAE encode's downsampling and middle stages."""
+    """Finds the tensors used in VAE encode."""
 
     down = []
     for level in _get_down_level_numbers(model):
@@ -77,6 +86,8 @@ def _get_tensors(model: safetensors.safe_open) -> dict:
                 model, f"{mid_prefix}.block_2", RESNET_LAYERS
             ),
         },
+        "out": _get_named_layer_tensors(model, ENCODER_PREFIX, OUT_LAYERS),
+        "quant_conv": _get_layer_tensors(model, f"{MODEL_PREFIX}.quant_conv"),
     }
 
 
@@ -225,6 +236,27 @@ def _attention_block(x: torch.Tensor, block: dict) -> torch.Tensor:
         block["proj_out"]["weight"], block["proj_out"]["bias"], attn_output
     )
     return x + attn_output
+
+
+def _encode_out(x: torch.Tensor, out: dict) -> torch.Tensor:
+    """Runs the tensor through the end of the encoder, normalising and
+    activating it a final time before a convolution reduces its channels to a
+    mean and a log-variance for each of the latent channels."""
+
+    x = group_norm(
+        out["norm_out"]["weight"],
+        out["norm_out"]["bias"],
+        x,
+        groups=NORM_GROUPS,
+    )
+    x = silu(x)
+    x = convolution(
+        out["conv_out"]["weight"],
+        out["conv_out"]["bias"],
+        x,
+        padding=CONV_PADDING,
+    )
+    return x
 
 
 def _decode_mid():
