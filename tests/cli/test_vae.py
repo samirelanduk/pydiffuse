@@ -28,6 +28,16 @@ class VaeTestCase(TestCase):
             check=False,
         )
 
+
+class EncodeTestCase(VaeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.image_path = Path(__file__).parent / "data" / "small-flower.jpg"
+        self.model_path = Path(__file__).parent / "models" / "vae_model.safetensors"
+
+    def run_command(self, *args, **kwargs):
+        return super().run_command("encode", *args, **kwargs)
+
     def check_latent(self, latent):
         self.assertEqual(latent.shape, (1, 4, 37, 50))
         self.assertEqual(round(latent[0, 0, 0, 0].item(), 3), -0.033)
@@ -38,16 +48,6 @@ class VaeTestCase(TestCase):
         self.assertEqual(round(latent[0, 3, 0, 49].item(), 3), -0.376)
         self.assertEqual(round(latent[0, 3, 36, 0].item(), 3), -0.062)
         self.assertEqual(round(latent[0, 3, 36, 49].item(), 3), -0.183)
-
-
-class EncodeTestCase(VaeTestCase):
-    def setUp(self):
-        super().setUp()
-        self.image_path = Path(__file__).parent / "data" / "small-flower.jpg"
-        self.model_path = Path(__file__).parent / "models" / "vae_model.safetensors"
-
-    def run_command(self, *args, **kwargs):
-        return super().run_command("encode", *args, **kwargs)
 
     def test_encode_image(self):
         # Run the command with only the required arguments
@@ -159,6 +159,12 @@ class DecodeTestCase(VaeTestCase):
     def run_command(self, *args, **kwargs):
         return super().run_command("decode", *args, **kwargs)
 
+    def check_image(self, image):
+        self.assertEqual(image.size, (100, 74))
+        self.assertEqual(image.mode, "RGB")
+        self.assertEqual(image.getpixel((0, 0)), (136, 107, 161))
+        self.assertEqual(image.getpixel((99, 73)), (143, 112, 128))
+
     def test_decode_latent(self):
         # Run the command with only the required arguments
         result = self.run_command(self.latent_path, self.model_path)
@@ -173,7 +179,86 @@ class DecodeTestCase(VaeTestCase):
 
         # Image is correct
         with Image.open(self.test_dir / "image.jpg") as image:
-            self.assertEqual(image.size, (100, 74))
-            self.assertEqual(image.mode, "RGB")
-            self.assertEqual(image.getpixel((0, 0)), (136, 107, 161))
-            self.assertEqual(image.getpixel((99, 73)), (143, 112, 128))
+            self.check_image(image)
+
+    def test_can_set_image_path(self):
+        # Run the command with a custom image path
+        image_path = self.test_dir / "custom_image.jpg"
+        result = self.run_command(self.latent_path, self.model_path, image=image_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created (in correct place)
+        self.assertTrue(image_path.exists())
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+        # Image is correct
+        with Image.open(image_path) as image:
+            self.check_image(image)
+
+    def test_latent_is_required(self):
+        # Run the command with no latent path
+        result = self.run_command(self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+    def test_latent_location_must_exist(self):
+        # Run the command with an invalid latent path
+        result = self.run_command("/no/such/path/latent.pt", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("File '/no/such/path/latent.pt' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+    def test_model_is_required(self):
+        # Run the command with no model path
+        result = self.run_command(self.latent_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+    def test_model_location_must_exist(self):
+        # Run the command with an invalid model path
+        result = self.run_command(self.latent_path, "/no/such/path/model.safetensors")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "File '/no/such/path/model.safetensors' does not exist", result.stderr
+        )
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+    def test_image_location_must_exist(self):
+        # Run the command with an invalid image path
+        result = self.run_command(
+            self.latent_path, self.model_path, image="/no/such/path/image.jpg"
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
