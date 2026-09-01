@@ -147,3 +147,25 @@ class EncodeTestCase(VaeTestCase):
 
         # File is not created
         self.assertFalse((self.test_dir / "latent.pt").exists())
+
+
+class DecodeTestCase(VaeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.latent_path = Path(__file__).parent / "data" / "small-flower.pt"
+        self.model_path = Path(__file__).parent / "models" / "vae_model.safetensors"
+
+    def run_command(self, *args, **kwargs):
+        return super().run_command("decode", *args, **kwargs)
+
+    def test_decode_latent(self):
+        # Run the command with only the required arguments
+        result = self.run_command(self.latent_path, self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "image.jpg").exists())

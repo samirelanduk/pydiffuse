@@ -10,6 +10,7 @@ from transformers import CLIPTokenizer
 from pydiffuse.clip import embed as clip_embed
 from pydiffuse.clip import encode as clip_encode
 from pydiffuse.clip import tokenize as clip_tokenize
+from pydiffuse.vae import decode as vae_decode
 from pydiffuse.vae import encode as vae_encode
 
 
@@ -130,6 +131,26 @@ def encode_image(image, model, latent):
     with safe_open(model, framework="pt", device="cpu") as tensors:
         latent_tensor = vae_encode(Image.open(image), tensors)
     torch.save(latent_tensor, latent)
+
+
+@vae.command("decode")
+@click.argument("latent", type=click.Path(exists=True, dir_okay=False))
+@click.argument("model", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--image",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="image.jpg",
+    help="Path to save the image to.",
+)
+def decode_latent(latent, model, image):
+    """Decodes a latent into an image using a VAE."""
+
+    latent_tensor = torch.load(latent)
+    with safe_open(model, framework="pt", device="cpu") as tensors:
+        image_tensor = vae_decode(latent_tensor, tensors)
+    with open(image, "wb") as f:
+        torch.save(image_tensor, f)
 
 
 if __name__ == "__main__":

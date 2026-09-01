@@ -8,6 +8,7 @@ from .layers import convolution, group_norm, silu
 
 MODEL_PREFIX = "first_stage_model"
 ENCODER_PREFIX = f"{MODEL_PREFIX}.encoder"
+DECODER_PREFIX = f"{MODEL_PREFIX}.decoder"
 RESNET_LAYERS = ("norm1", "conv1", "norm2", "conv2", "nin_shortcut")
 ATTENTION_LAYERS = ("norm", "q", "k", "v", "proj_out")
 OUT_LAYERS = ("norm_out", "conv_out")
@@ -41,8 +42,20 @@ def encode(image: Image.Image, model: safetensors.safe_open):
     return x
 
 
-def decode():
-    pass
+def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
+    model_tensors = _get_decode_tensors(model)
+    x = convolution(
+        model_tensors["post_quant_conv"]["weight"],
+        model_tensors["post_quant_conv"]["bias"],
+        latent,
+    )
+    x = convolution(
+        model_tensors["conv_in"]["weight"],
+        model_tensors["conv_in"]["bias"],
+        x,
+        padding=CONV_IN_PADDING,
+    )
+    return x
 
 
 def _image_to_tensor(image: Image.Image, downscale_ratio: int) -> torch.Tensor:
@@ -88,6 +101,15 @@ def _get_tensors(model: safetensors.safe_open) -> dict:
         },
         "out": _get_named_layer_tensors(model, ENCODER_PREFIX, OUT_LAYERS),
         "quant_conv": _get_layer_tensors(model, f"{MODEL_PREFIX}.quant_conv"),
+    }
+
+
+def _get_decode_tensors(model: safetensors.safe_open) -> dict:
+    """Finds the tensors used in VAE decode."""
+
+    return {
+        "post_quant_conv": _get_layer_tensors(model, f"{MODEL_PREFIX}.post_quant_conv"),
+        "conv_in": _get_layer_tensors(model, f"{DECODER_PREFIX}.conv_in"),
     }
 
 
