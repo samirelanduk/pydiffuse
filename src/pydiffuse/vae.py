@@ -7,6 +7,8 @@ from PIL import Image
 from .layers import convolution, group_norm, silu
 
 ENCODER_PREFIX = "first_stage_model.encoder"
+RESNET_LAYERS = ("norm1", "conv1", "norm2", "conv2", "nin_shortcut")
+ATTENTION_LAYERS = ("norm", "q", "k", "v", "proj_out")
 DOWNSCALE_RATIO = 8
 CONV_IN_PADDING = 1
 CONV_PADDING = 1
@@ -26,6 +28,7 @@ def encode(image: Image.Image, model: safetensors.safe_open):
         padding=CONV_IN_PADDING,
     )
     x = _encode_down(x, model_tensors["down"])
+    x = _encode_mid(x, model_tensors["mid"])
     return x
 
 
@@ -48,24 +51,41 @@ def _image_to_tensor(image: Image.Image) -> torch.Tensor:
 
 
 def _get_tensors(model: safetensors.safe_open) -> dict:
-    """Finds the tensors used in VAE encode's downsampling stages."""
+    """Finds the tensors used in VAE encode's downsampling and middle stages."""
 
     down = []
     for level in _get_down_level_numbers(model):
         prefix = f"{ENCODER_PREFIX}.down.{level}"
         blocks = [
-            {
-                name: _get_layer_tensors(model, f"{prefix}.block.{index}.{name}")
-                for name in ("norm1", "conv1", "norm2", "conv2", "nin_shortcut")
-            }
+            _get_named_layer_tensors(model, f"{prefix}.block.{index}", RESNET_LAYERS)
             for index in _get_down_block_numbers(model, level)
         ]
         downsample = _get_layer_tensors(model, f"{prefix}.downsample.conv")
         down.append({"block": blocks, "downsample": downsample})
+    mid_prefix = f"{ENCODER_PREFIX}.mid"
     return {
         "conv_in": _get_layer_tensors(model, f"{ENCODER_PREFIX}.conv_in"),
         "down": down,
+        "mid": {
+            "block_1": _get_named_layer_tensors(
+                model, f"{mid_prefix}.block_1", RESNET_LAYERS
+            ),
+            "attn_1": _get_named_layer_tensors(
+                model, f"{mid_prefix}.attn_1", ATTENTION_LAYERS
+            ),
+            "block_2": _get_named_layer_tensors(
+                model, f"{mid_prefix}.block_2", RESNET_LAYERS
+            ),
+        },
     }
+
+
+def _get_named_layer_tensors(
+    model: safetensors.safe_open, prefix: str, names: tuple[str, ...]
+) -> dict:
+    """Gets the weight and bias of each of the named layers under a prefix."""
+
+    return {name: _get_layer_tensors(model, f"{prefix}.{name}") for name in names}
 
 
 def _get_layer_tensors(model: safetensors.safe_open, prefix: str) -> dict | None:
@@ -167,8 +187,44 @@ def _resnet_block(x: torch.Tensor, block: dict) -> torch.Tensor:
     return x + h
 
 
-def _encode_mid():
-    pass
+def _encode_mid(x: torch.Tensor, mid: dict) -> torch.Tensor:
+    """Runs the tensor through the middle of the encoder - a residual block, an
+    attention block, and a second residual block. Nothing changes shape here, as
+    it is a final refinement of the smallest representation."""
+
+    x = _resnet_block(x, mid["block_1"])
+    x = _attention_block(x, mid["attn_1"])
+    x = _resnet_block(x, mid["block_2"])
+    return x
+
+
+def _attention_block(x: torch.Tensor, block: dict) -> torch.Tensor:
+    """Applies an attention block to the tensor. Every position in the image is
+    scored against every other position, and is then replaced by a weighted
+    average of all of them, so that distant parts of the image can inform each
+    other - something a convolution's small window cannot do. The result is
+    added back onto the original tensor."""
+
+    attn_x = group_norm(
+        block["norm"]["weight"], block["norm"]["bias"], x, groups=NORM_GROUPS
+    )
+    Q = convolution(block["q"]["weight"], block["q"]["bias"], attn_x)
+    K = convolution(block["k"]["weight"], block["k"]["bias"], attn_x)
+    V = convolution(block["v"]["weight"], block["v"]["bias"], attn_x)
+    batch, channels, height, width = Q.shape
+    positions = height * width
+    Q = Q.view(batch, channels, positions).transpose(1, 2)
+    K = K.view(batch, channels, positions)
+    V = V.view(batch, channels, positions).transpose(1, 2)
+    scores = Q @ K / (Q.shape[-1] ** 0.5)
+    attn_output = torch.softmax(scores, dim=-1) @ V
+    attn_output = (
+        attn_output.transpose(1, 2).contiguous().view(batch, channels, height, width)
+    )
+    attn_output = convolution(
+        block["proj_out"]["weight"], block["proj_out"]["bias"], attn_output
+    )
+    return x + attn_output
 
 
 def _decode_mid():
