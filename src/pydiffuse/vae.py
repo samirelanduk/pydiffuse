@@ -59,7 +59,7 @@ def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
     x = _mid_blocks(x, model_tensors["mid"])
     x = _decode_up(x, model_tensors["up"])
     x = _out_layers(x, model_tensors["out"])
-    return x
+    return _tensor_to_image(x)
 
 
 def _image_to_tensor(image: Image.Image, downscale_ratio: int) -> torch.Tensor:
@@ -74,6 +74,18 @@ def _image_to_tensor(image: Image.Image, downscale_ratio: int) -> torch.Tensor:
             offset = (size % downscale_ratio) // 2
             pixels = pixels.narrow(dimension, offset, cropped)
     return pixels
+
+
+def _tensor_to_image(x: torch.Tensor) -> Image.Image:
+    """Turns a decoded tensor back into an image, reversing the conversion that
+    the encoder's input went through. Values outside the range the encoder was
+    given are clamped, as the decoder is under no obligation to stay inside
+    it."""
+
+    pixels = x.squeeze(0).permute(1, 2, 0)
+    pixels = ((pixels + 1.0) / 2.0).clamp(0.0, 1.0)
+    pixels = (pixels * 255.0).round().to(torch.uint8)
+    return Image.fromarray(pixels.contiguous().numpy(), mode="RGB")
 
 
 def _get_tensors(model: safetensors.safe_open) -> dict:

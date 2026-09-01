@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import TestCase
 
 import torch
+from PIL import Image
 
 
 class VaeTestCase(TestCase):
@@ -169,3 +170,10 @@ class DecodeTestCase(VaeTestCase):
 
         # File is created
         self.assertTrue((self.test_dir / "image.jpg").exists())
+
+        # Image is correct
+        with Image.open(self.test_dir / "image.jpg") as image:
+            self.assertEqual(image.size, (100, 74))
+            self.assertEqual(image.mode, "RGB")
+            self.assertEqual(image.getpixel((0, 0)), (136, 107, 161))
+            self.assertEqual(image.getpixel((99, 73)), (143, 112, 128))

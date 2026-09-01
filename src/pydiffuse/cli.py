@@ -148,9 +148,8 @@ def decode_latent(latent, model, image):
 
     latent_tensor = torch.load(latent)
     with safe_open(model, framework="pt", device="cpu") as tensors:
-        image_tensor = vae_decode(latent_tensor, tensors)
-    with open(image, "wb") as f:
-        torch.save(image_tensor, f)
+        image_obj = vae_decode(latent_tensor, tensors)
+    image_obj.save(image)
 
 
 if __name__ == "__main__":
