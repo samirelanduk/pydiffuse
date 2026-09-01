@@ -64,6 +64,7 @@ def convolution(
     input: torch.Tensor,
     padding: int = 0,
     stride: int = 1,
+    pad_at_end: bool = False,
 ) -> torch.Tensor:
     """Applies a 2D convolution to the incoming data, which should be a 4D
     tensor of shape [batch, channels, height, width]. The weight must be a 4D
@@ -75,9 +76,12 @@ def convolution(
     outputs a single value for that position using the weights and biases.
 
     Padding adds a border of zeros of the given width to every edge of the
-    input before the kernel is run. Stride is the number of positions the kernel
-    moves between windows, so a stride of 2 halves the output dimensions."""
+    input before the kernel is run. If pad_at_end is True the zeros are added
+    only to the right and bottom edges instead of to all four."""
 
+    if pad_at_end:
+        input = torch.nn.functional.pad(input, (0, padding, 0, padding))
+        padding = 0
     layer = torch.nn.Conv2d(
         in_channels=weight.shape[1],
         out_channels=weight.shape[0],
