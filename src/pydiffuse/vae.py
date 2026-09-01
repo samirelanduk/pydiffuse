@@ -31,7 +31,7 @@ def encode(image: Image.Image, model: safetensors.safe_open):
         padding=CONV_IN_PADDING,
     )
     x = _encode_down(x, model_tensors["down"])
-    x = _encode_mid(x, model_tensors["mid"])
+    x = _mid_blocks(x, model_tensors["mid"])
     x = _encode_out(x, model_tensors["out"])
     x = convolution(
         model_tensors["quant_conv"]["weight"],
@@ -55,6 +55,7 @@ def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
         x,
         padding=CONV_IN_PADDING,
     )
+    x = _mid_blocks(x, model_tensors["mid"])
     return x
 
 
@@ -84,21 +85,10 @@ def _get_tensors(model: safetensors.safe_open) -> dict:
         ]
         downsample = _get_layer_tensors(model, f"{prefix}.downsample.conv")
         down.append({"block": blocks, "downsample": downsample})
-    mid_prefix = f"{ENCODER_PREFIX}.mid"
     return {
         "conv_in": _get_layer_tensors(model, f"{ENCODER_PREFIX}.conv_in"),
         "down": down,
-        "mid": {
-            "block_1": _get_named_layer_tensors(
-                model, f"{mid_prefix}.block_1", RESNET_LAYERS
-            ),
-            "attn_1": _get_named_layer_tensors(
-                model, f"{mid_prefix}.attn_1", ATTENTION_LAYERS
-            ),
-            "block_2": _get_named_layer_tensors(
-                model, f"{mid_prefix}.block_2", RESNET_LAYERS
-            ),
-        },
+        "mid": _get_mid_tensors(model, ENCODER_PREFIX),
         "out": _get_named_layer_tensors(model, ENCODER_PREFIX, OUT_LAYERS),
         "quant_conv": _get_layer_tensors(model, f"{MODEL_PREFIX}.quant_conv"),
     }
@@ -110,6 +100,24 @@ def _get_decode_tensors(model: safetensors.safe_open) -> dict:
     return {
         "post_quant_conv": _get_layer_tensors(model, f"{MODEL_PREFIX}.post_quant_conv"),
         "conv_in": _get_layer_tensors(model, f"{DECODER_PREFIX}.conv_in"),
+        "mid": _get_mid_tensors(model, DECODER_PREFIX),
+    }
+
+
+def _get_mid_tensors(model: safetensors.safe_open, prefix: str) -> dict:
+    """Finds the tensors of the residual, attention and residual blocks that sit
+    in the middle of both the encoder and the decoder."""
+
+    return {
+        "block_1": _get_named_layer_tensors(
+            model, f"{prefix}.mid.block_1", RESNET_LAYERS
+        ),
+        "attn_1": _get_named_layer_tensors(
+            model, f"{prefix}.mid.attn_1", ATTENTION_LAYERS
+        ),
+        "block_2": _get_named_layer_tensors(
+            model, f"{prefix}.mid.block_2", RESNET_LAYERS
+        ),
     }
 
 
@@ -228,10 +236,10 @@ def _resnet_block(x: torch.Tensor, block: dict) -> torch.Tensor:
     return x + h
 
 
-def _encode_mid(x: torch.Tensor, mid: dict) -> torch.Tensor:
-    """Runs the tensor through the middle of the encoder - a residual block, an
-    attention block, and a second residual block. Nothing changes shape here, as
-    it is a final refinement of the smallest representation."""
+def _mid_blocks(x: torch.Tensor, mid: dict) -> torch.Tensor:
+    """Runs the tensor through the middle of the encoder or decoder - a residual
+    block, an attention block, and a second residual block. Nothing changes
+    shape here, as it is a refinement of the smallest representation."""
 
     x = _resnet_block(x, mid["block_1"])
     x = _attention_block(x, mid["attn_1"])
@@ -287,10 +295,6 @@ def _encode_out(x: torch.Tensor, out: dict) -> torch.Tensor:
         padding=CONV_PADDING,
     )
     return x
-
-
-def _decode_mid():
-    pass
 
 
 def _decode_up():
