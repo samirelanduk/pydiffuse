@@ -11,18 +11,18 @@ ENCODER_PREFIX = f"{MODEL_PREFIX}.encoder"
 RESNET_LAYERS = ("norm1", "conv1", "norm2", "conv2", "nin_shortcut")
 ATTENTION_LAYERS = ("norm", "q", "k", "v", "proj_out")
 OUT_LAYERS = ("norm_out", "conv_out")
-DOWNSCALE_RATIO = 8
+
 CONV_IN_PADDING = 1
 CONV_PADDING = 1
 DOWNSAMPLE_PADDING = 1
 DOWNSAMPLE_STRIDE = 2
-NORM_EPSILON = 1e-6
 NORM_GROUPS = 32
 
 
 def encode(image: Image.Image, model: safetensors.safe_open):
     model_tensors = _get_tensors(model)
-    x = _image_to_tensor(image)
+    downscale_ratio = _get_downscale_ratio(model_tensors["down"])
+    x = _image_to_tensor(image, downscale_ratio)
     x = convolution(
         model_tensors["conv_in"]["weight"],
         model_tensors["conv_in"]["bias"],
@@ -45,16 +45,16 @@ def decode():
     pass
 
 
-def _image_to_tensor(image: Image.Image) -> torch.Tensor:
+def _image_to_tensor(image: Image.Image, downscale_ratio: int) -> torch.Tensor:
     rgb = image.convert("RGB")
     width, height = rgb.size
     pixels = torch.tensor(rgb.getdata(), dtype=torch.float32).reshape(height, width, 3)
     pixels = pixels / 255.0 * 2.0 - 1.0
     pixels = pixels.permute(2, 0, 1).unsqueeze(0)
     for dimension, size in ((2, height), (3, width)):
-        cropped = size - (size % DOWNSCALE_RATIO)
+        cropped = size - (size % downscale_ratio)
         if cropped != size:
-            offset = (size % DOWNSCALE_RATIO) // 2
+            offset = (size % downscale_ratio) // 2
             pixels = pixels.narrow(dimension, offset, cropped)
     return pixels
 
@@ -137,6 +137,14 @@ def _get_down_block_numbers(model: safetensors.safe_open, level: int) -> list[in
             continue
         block_numbers.add(int(block_number_match.group(1)))
     return sorted(block_numbers)
+
+
+def _get_downscale_ratio(down: list[dict]) -> int:
+    """Works out how much smaller than the image the latent will be, which is
+    the stride of every downsampling convolution multiplied together."""
+
+    downsamples = [level for level in down if level["downsample"] is not None]
+    return DOWNSAMPLE_STRIDE ** len(downsamples)
 
 
 def _encode_down(x: torch.Tensor, down: list[dict]) -> torch.Tensor:
