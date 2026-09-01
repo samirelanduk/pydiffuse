@@ -33,7 +33,7 @@ def encode(image: Image.Image, model: safetensors.safe_open):
     )
     x = _encode_down(x, model_tensors["down"])
     x = _mid_blocks(x, model_tensors["mid"])
-    x = _encode_out(x, model_tensors["out"])
+    x = _out_layers(x, model_tensors["out"])
     x = convolution(
         model_tensors["quant_conv"]["weight"],
         model_tensors["quant_conv"]["bias"],
@@ -58,6 +58,7 @@ def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
     )
     x = _mid_blocks(x, model_tensors["mid"])
     x = _decode_up(x, model_tensors["up"])
+    x = _out_layers(x, model_tensors["out"])
     return x
 
 
@@ -113,6 +114,7 @@ def _get_decode_tensors(model: safetensors.safe_open) -> dict:
         "conv_in": _get_layer_tensors(model, f"{DECODER_PREFIX}.conv_in"),
         "mid": _get_mid_tensors(model, DECODER_PREFIX),
         "up": up,
+        "out": _get_named_layer_tensors(model, DECODER_PREFIX, OUT_LAYERS),
     }
 
 
@@ -293,10 +295,10 @@ def _attention_block(x: torch.Tensor, block: dict) -> torch.Tensor:
     return x + attn_output
 
 
-def _encode_out(x: torch.Tensor, out: dict) -> torch.Tensor:
-    """Runs the tensor through the end of the encoder, normalising and
-    activating it a final time before a convolution reduces its channels to a
-    mean and a log-variance for each of the latent channels."""
+def _out_layers(x: torch.Tensor, out: dict) -> torch.Tensor:
+    """Runs the tensor through the end of the encoder or decoder, normalising
+    and activating it a final time before a convolution reduces its channels to
+    however many the output needs."""
 
     x = group_norm(
         out["norm_out"]["weight"],
