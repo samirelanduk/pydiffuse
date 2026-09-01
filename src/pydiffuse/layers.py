@@ -92,3 +92,14 @@ def convolution(
     layer.weight = torch.nn.Parameter(weight, requires_grad=False)
     layer.bias = torch.nn.Parameter(bias, requires_grad=False)
     return layer(input)
+
+
+def silu(input: torch.Tensor) -> torch.Tensor:
+    """Applies the SiLU (or swish) activation function to every value in the
+    incoming data, which is the value multiplied by its own sigmoid - that is,
+    x * (1 / (1 + e^-x)). Large positive values are passed through more or less
+    unchanged, and large negative values are squashed towards zero.
+
+    The result is a tensor of the same shape as the input."""
+
+    return input * torch.sigmoid(input)

@@ -2,7 +2,7 @@ from unittest import TestCase
 
 import torch
 
-from pydiffuse.layers import convolution, group_norm, layer_norm, linear
+from pydiffuse.layers import convolution, group_norm, layer_norm, linear, silu
 
 
 class LinearLayerTests(TestCase):
@@ -391,6 +391,25 @@ class ConvolutionLayerTests(TestCase):
                             [[604.0], [676.0]],
                             [[358.0], [382.0]],
                         ],
+                    ]
+                ),
+            )
+        )
+
+
+class SiluLayerTests(TestCase):
+    def test_silu_layer(self):
+        input = torch.tensor(
+            [[-3.0, -2.0, -1.0, 0.0, 1.0, 2.0], [-1.5, -0.5, 0.5, 3.0, 6.0, 12.0]]
+        )
+        output = silu(input)
+        self.assertTrue(
+            torch.allclose(
+                output,
+                torch.tensor(
+                    [
+                        [-0.142278, -0.238406, -0.268941, 0.0, 0.731059, 1.761594],
+                        [-0.273638, -0.188770, 0.311230, 2.857722, 5.985165, 11.999926],
                     ]
                 ),
             )
