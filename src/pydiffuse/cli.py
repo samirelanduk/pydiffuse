@@ -117,12 +117,19 @@ def encode(embedding, model, conditioning):
 @vae.command("encode")
 @click.argument("image", type=click.Path(exists=True, dir_okay=False))
 @click.argument("model", type=click.Path(exists=True, dir_okay=False))
-def encode_image(image, model):
+@click.option(
+    "--latent",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="latent.pt",
+    help="Path to save the latent to.",
+)
+def encode_image(image, model, latent):
     """Encodes an image into a latent using a VAE."""
 
     with safe_open(model, framework="pt", device="cpu") as tensors:
-        latent = vae_encode(Image.open(image), tensors)
-    torch.save(latent, "latent.pt")
+        latent_tensor = vae_encode(Image.open(image), tensors)
+    torch.save(latent_tensor, latent)
 
 
 if __name__ == "__main__":
