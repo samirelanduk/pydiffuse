@@ -60,6 +60,40 @@ class GroupNormLayerTests(TestCase):
             )
         )
 
+    def test_group_norm_layer_higher_dimensions(self):
+        input = torch.tensor(
+            [
+                [
+                    [[1.0, 2.0], [3.0, 4.0]],
+                    [[5.0, 6.0], [7.0, 8.0]],
+                    [[9.0, 10.0], [11.0, 12.0]],
+                    [[2.0, 4.0], [8.0, 16.0]],
+                    [[32.0, 64.0], [128.0, 256.0]],
+                    [[1.0, 1.0], [2.0, 2.0]],
+                ]
+            ]
+        )
+        weights = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])
+        bias = torch.tensor([100.0, 200.0, 300.0, 400.0, 500.0, 600.0])
+        output = group_norm(weights, bias, input, groups=3)
+        self.assertTrue(
+            torch.allclose(
+                output,
+                torch.tensor(
+                    [
+                        [
+                            [[84.7248, 89.0891], [93.4535, 97.8178]],
+                            [[204.3643, 213.0930], [221.8218, 230.5505]],
+                            [[300.0000, 307.2231], [314.4463, 321.6694]],
+                            [[332.5839, 351.8457], [390.3691, 467.4160]],
+                            [[483.0479, 501.9163], [539.6531, 615.1266]],
+                            [[557.7230, 557.7230], [558.4305, 558.4305]],
+                        ]
+                    ]
+                ),
+            )
+        )
+
 
 class LayerNormLayerTests(TestCase):
     def test_layer_norm_layer(self):

@@ -20,17 +20,21 @@ def group_norm(
     input: torch.Tensor,
     groups: int | None = None,
 ) -> torch.Tensor:
-    """Applies a group normalization to the incoming data. Each vector in the
-    final layer is broken up into groups (by default the entire vector is a
-    single group) and each group is adjusted so that its mean is 0 and its
-    variance is 1, while preserving the relative gaps between the values. It
-    then scales the values by the weight and adds the bias.
+    """Applies a group normalization to the incoming data. The entries in
+    dimension 1 are combined into groups (by default they all form a single
+    group), and each group is adjusted so that its mean is 0 and its variance
+    is 1, while preserving the relative gaps between the values. The values
+    are then scaled by the weight and shifted by the bias, one of each per
+    entry in dimension 1, applied to every value in that entry. Any dimensions
+    after the first two are carried along with the entry containing them, and
+    each entry in dimension 0 is handled independently of the others.
 
+    The weight and bias must be 1D tensors of dimensions matching dimension 1.
     The result is a tensor of the same shape as the input."""
 
     groups = 1 if groups is None else groups
     layer = torch.nn.GroupNorm(
-        num_groups=groups, num_channels=input.shape[-1], device="cpu"
+        num_groups=groups, num_channels=input.shape[1], device="cpu"
     )
     layer.weight = torch.nn.Parameter(weight, requires_grad=False)
     layer.bias = torch.nn.Parameter(bias, requires_grad=False)
