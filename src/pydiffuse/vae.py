@@ -17,6 +17,7 @@ CONV_IN_PADDING = 1
 CONV_PADDING = 1
 DOWNSAMPLE_PADDING = 1
 DOWNSAMPLE_STRIDE = 2
+UPSAMPLE_SCALE = 2
 NORM_GROUPS = 32
 
 
@@ -56,6 +57,7 @@ def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
         padding=CONV_IN_PADDING,
     )
     x = _mid_blocks(x, model_tensors["mid"])
+    x = _decode_up(x, model_tensors["up"])
     return x
 
 
@@ -77,11 +79,11 @@ def _get_tensors(model: safetensors.safe_open) -> dict:
     """Finds the tensors used in VAE encode."""
 
     down = []
-    for level in _get_down_level_numbers(model):
+    for level in _get_level_numbers(model, ENCODER_PREFIX, "down"):
         prefix = f"{ENCODER_PREFIX}.down.{level}"
         blocks = [
             _get_named_layer_tensors(model, f"{prefix}.block.{index}", RESNET_LAYERS)
-            for index in _get_down_block_numbers(model, level)
+            for index in _get_block_numbers(model, ENCODER_PREFIX, "down", level)
         ]
         downsample = _get_layer_tensors(model, f"{prefix}.downsample.conv")
         down.append({"block": blocks, "downsample": downsample})
@@ -97,10 +99,20 @@ def _get_tensors(model: safetensors.safe_open) -> dict:
 def _get_decode_tensors(model: safetensors.safe_open) -> dict:
     """Finds the tensors used in VAE decode."""
 
+    up = []
+    for level in _get_level_numbers(model, DECODER_PREFIX, "up"):
+        prefix = f"{DECODER_PREFIX}.up.{level}"
+        blocks = [
+            _get_named_layer_tensors(model, f"{prefix}.block.{index}", RESNET_LAYERS)
+            for index in _get_block_numbers(model, DECODER_PREFIX, "up", level)
+        ]
+        upsample = _get_layer_tensors(model, f"{prefix}.upsample.conv")
+        up.append({"block": blocks, "upsample": upsample})
     return {
         "post_quant_conv": _get_layer_tensors(model, f"{MODEL_PREFIX}.post_quant_conv"),
         "conv_in": _get_layer_tensors(model, f"{DECODER_PREFIX}.conv_in"),
         "mid": _get_mid_tensors(model, DECODER_PREFIX),
+        "up": up,
     }
 
 
@@ -142,27 +154,32 @@ def _get_layer_tensors(model: safetensors.safe_open, prefix: str) -> dict | None
     }
 
 
-def _get_down_level_numbers(model: safetensors.safe_open) -> list[int]:
-    """Gets a list of encoder downsampling level numbers present in the model."""
+def _get_level_numbers(
+    model: safetensors.safe_open, prefix: str, section: str
+) -> list[int]:
+    """Gets a list of the level numbers present in the encoder's downsampling
+    section, or in the decoder's upsampling section."""
 
     level_numbers = set()
     keys = model.keys()
     for key in keys:
-        level_number_match = re.search(rf"^{ENCODER_PREFIX}\.down\.(\d+)\.", key)
+        level_number_match = re.search(rf"^{prefix}\.{section}\.(\d+)\.", key)
         if not level_number_match:
             continue
         level_numbers.add(int(level_number_match.group(1)))
     return sorted(level_numbers)
 
 
-def _get_down_block_numbers(model: safetensors.safe_open, level: int) -> list[int]:
-    """Gets a list of residual block numbers present in a downsampling level."""
+def _get_block_numbers(
+    model: safetensors.safe_open, prefix: str, section: str, level: int
+) -> list[int]:
+    """Gets a list of the residual block numbers present in a single level."""
 
     block_numbers = set()
     keys = model.keys()
     for key in keys:
-        prefix = rf"^{ENCODER_PREFIX}\.down\.{level}\.block\.(\d+)\."
-        block_number_match = re.search(prefix, key)
+        pattern = rf"^{prefix}\.{section}\.{level}\.block\.(\d+)\."
+        block_number_match = re.search(pattern, key)
         if not block_number_match:
             continue
         block_numbers.add(int(block_number_match.group(1)))
@@ -297,5 +314,26 @@ def _encode_out(x: torch.Tensor, out: dict) -> torch.Tensor:
     return x
 
 
-def _decode_up():
-    pass
+def _decode_up(x: torch.Tensor, up: list[dict]) -> torch.Tensor:
+    """Runs the tensor through the upsampling half of the decoder. The levels
+    are worked through in reverse, each one a run of residual blocks followed
+    (usually) by an upsampling convolution, so the tensor gets shallower in
+    channels and larger in height and width as it goes."""
+
+    for level, tensors in reversed(list(enumerate(up))):
+        for block in tensors["block"]:
+            x = _resnet_block(x, block)
+        if tensors["upsample"] is not None:
+            x = _upsample(x, tensors["upsample"])
+    return x
+
+
+def _upsample(x: torch.Tensor, upsample: dict) -> torch.Tensor:
+    """Doubles the height and width of the tensor by repeating each value into a
+    2x2 square of its own, then runs a convolution over the result to smooth out
+    the blockiness that repeating produces."""
+
+    x = x.repeat_interleave(UPSAMPLE_SCALE, dim=2)
+    x = x.repeat_interleave(UPSAMPLE_SCALE, dim=3)
+    x = convolution(upsample["weight"], upsample["bias"], x, padding=CONV_PADDING)
+    return x
