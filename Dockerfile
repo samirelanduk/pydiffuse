@@ -1,5 +1,5 @@
 # Build stage: uv and a system Python, discarded once the venv is built.
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:0.9.30-python3.13-bookworm-slim AS builder
 
 # Precompile bytecode: read-only Singularity can't cache it at runtime.
 ENV UV_COMPILE_BYTECODE=1
