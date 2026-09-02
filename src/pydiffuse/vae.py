@@ -20,7 +20,9 @@ UPSAMPLE_SCALE = 2
 NORM_GROUPS = 32
 
 
-def encode(image: Image.Image, model: safetensors.safe_open):
+def encode(image: Image.Image, model: safetensors.safe_open) -> torch.Tensor:
+    """Encodes an image into latent space using a VAE model."""
+
     model_tensors = _get_encode_tensors(model)
     downscale_ratio = _get_downscale_ratio(model_tensors["down"])
     x = _image_to_tensor(image, downscale_ratio)
@@ -43,6 +45,8 @@ def encode(image: Image.Image, model: safetensors.safe_open):
 
 
 def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
+    """Decodes a latent tensor into an image using a VAE model."""
+
     model_tensors = _get_decode_tensors(model)
     x = convolution(
         model_tensors["post_quant_conv"]["weight"],
@@ -65,11 +69,11 @@ def _get_encode_tensors(model: safetensors.safe_open) -> dict:
     """Finds the tensors used in VAE encode."""
 
     down = []
-    for level in _get_level_numbers(model, ENCODER_PREFIX, "down"):
+    for level in _get_numbers(model, f"{ENCODER_PREFIX}.down"):
         prefix = f"{ENCODER_PREFIX}.down.{level}"
         blocks = [
             _get_layers(model, f"{prefix}.block.{index}", RESNET_LAYERS)
-            for index in _get_block_numbers(model, ENCODER_PREFIX, "down", level)
+            for index in _get_numbers(model, f"{prefix}.block")
         ]
         downsample = _get_layer(model, f"{prefix}.downsample.conv")
         down.append({"block": blocks, "downsample": downsample})
@@ -87,11 +91,11 @@ def _get_decode_tensors(model: safetensors.safe_open) -> dict:
     """Finds the tensors used in VAE decode."""
 
     up = []
-    for level in _get_level_numbers(model, DECODER_PREFIX, "up"):
+    for level in _get_numbers(model, f"{DECODER_PREFIX}.up"):
         prefix = f"{DECODER_PREFIX}.up.{level}"
         blocks = [
             _get_layers(model, f"{prefix}.block.{index}", RESNET_LAYERS)
-            for index in _get_block_numbers(model, DECODER_PREFIX, "up", level)
+            for index in _get_numbers(model, f"{prefix}.block")
         ]
         upsample = _get_layer(model, f"{prefix}.upsample.conv")
         up.append({"block": blocks, "upsample": upsample})
@@ -105,20 +109,19 @@ def _get_decode_tensors(model: safetensors.safe_open) -> dict:
     }
 
 
-def _get_level_numbers(
-    model: safetensors.safe_open, prefix: str, section: str
-) -> list[int]:
-    """Gets a list of the level numbers present in the encoder's downsampling
-    section, or in the decoder's upsampling section."""
+def _get_numbers(model: safetensors.safe_open, prefix: str) -> list[int]:
+    """Gets a list of the numbers that the model's keys use directly under a
+    prefix, such as the levels within a downsampling section, or the residual
+    blocks within a level."""
 
-    level_numbers = set()
+    numbers = set()
     keys = model.keys()
     for key in keys:
-        level_number_match = re.search(rf"^{prefix}\.{section}\.(\d+)\.", key)
-        if not level_number_match:
+        number_match = re.search(rf"^{prefix}\.(\d+)\.", key)
+        if not number_match:
             continue
-        level_numbers.add(int(level_number_match.group(1)))
-    return sorted(level_numbers)
+        numbers.add(int(number_match.group(1)))
+    return sorted(numbers)
 
 
 def _get_layers(
@@ -129,28 +132,12 @@ def _get_layers(
     return {name: _get_layer(model, f"{prefix}.{name}") for name in names}
 
 
-def _get_block_numbers(
-    model: safetensors.safe_open, prefix: str, section: str, level: int
-) -> list[int]:
-    """Gets a list of the residual block numbers present in a single level."""
-
-    block_numbers = set()
-    keys = model.keys()
-    for key in keys:
-        pattern = rf"^{prefix}\.{section}\.{level}\.block\.(\d+)\."
-        block_number_match = re.search(pattern, key)
-        if not block_number_match:
-            continue
-        block_numbers.add(int(block_number_match.group(1)))
-    return sorted(block_numbers)
-
-
 def _get_layer(model: safetensors.safe_open, prefix: str) -> dict | None:
     """Gets the weight and bias of a single layer, or None if the model has no
     such layer."""
 
     keys = model.keys()
-    if f"{prefix}.weight" not in keys:
+    if f"{prefix}.weight" not in keys or f"{prefix}.bias" not in keys:
         return None
     return {
         "weight": model.get_tensor(f"{prefix}.weight").float(),
@@ -178,9 +165,13 @@ def _get_downscale_ratio(down: list[dict]) -> int:
 
 
 def _image_to_tensor(image: Image.Image, downscale_ratio: int) -> torch.Tensor:
+    """Converts a PIL image into a tensor containing the same pixel information,
+    but normalised to the range [-1, 1]."""
+
     rgb = image.convert("RGB")
     width, height = rgb.size
-    pixels = torch.tensor(rgb.getdata(), dtype=torch.float32).reshape(height, width, 3)
+    pixels = torch.tensor(bytearray(rgb.tobytes()), dtype=torch.float32)
+    pixels = pixels.reshape(height, width, 3)
     pixels = pixels / 255.0 * 2.0 - 1.0
     pixels = pixels.permute(2, 0, 1).unsqueeze(0)
     for dimension, size in ((2, height), (3, width)):
@@ -209,7 +200,7 @@ def _encode_down(x: torch.Tensor, down: list[dict]) -> torch.Tensor:
     convolution, so the tensor gets deeper in channels and smaller in height and
     width as it goes."""
 
-    for level, tensors in enumerate(down):
+    for tensors in down:
         for block in tensors["block"]:
             x = _resnet_block(x, block)
         if tensors["downsample"] is not None:
@@ -230,7 +221,7 @@ def _decode_up(x: torch.Tensor, up: list[dict]) -> torch.Tensor:
     (usually) by an upsampling convolution, so the tensor gets shallower in
     channels and larger in height and width as it goes."""
 
-    for level, tensors in reversed(list(enumerate(up))):
+    for tensors in reversed(up):
         for block in tensors["block"]:
             x = _resnet_block(x, block)
         if tensors["upsample"] is not None:
@@ -279,7 +270,7 @@ def _resnet_block(x: torch.Tensor, block: dict) -> torch.Tensor:
 def _mid_blocks(x: torch.Tensor, mid: dict) -> torch.Tensor:
     """Runs the tensor through the middle of the encoder or decoder - a residual
     block, an attention block, and a second residual block. Nothing changes
-    shape here, as it is a refinement of the smallest representation."""
+    shape, as it is a refinement of the smallest representation."""
 
     x = _resnet_block(x, mid["block_1"])
     x = _attention_block(x, mid["attn_1"])
