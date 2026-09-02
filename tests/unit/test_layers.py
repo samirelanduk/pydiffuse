@@ -2,7 +2,7 @@ from unittest import TestCase
 
 import torch
 
-from pydiffuse.layers import convolution, group_norm, layer_norm, linear
+from pydiffuse.layers import convolution, group_norm, layer_norm, linear, silu
 
 
 class LinearLayerTests(TestCase):
@@ -55,6 +55,40 @@ class GroupNormLayerTests(TestCase):
                     [
                         [87.7526, 200.0000, 336.7421, 351.0106, 500.0000, 673.4841],
                         [89.3096, 194.6548, 340.0891, 357.2382, 486.6370, 680.1783],
+                    ]
+                ),
+            )
+        )
+
+    def test_group_norm_layer_higher_dimensions(self):
+        input = torch.tensor(
+            [
+                [
+                    [[1.0, 2.0], [3.0, 4.0]],
+                    [[5.0, 6.0], [7.0, 8.0]],
+                    [[9.0, 10.0], [11.0, 12.0]],
+                    [[2.0, 4.0], [8.0, 16.0]],
+                    [[32.0, 64.0], [128.0, 256.0]],
+                    [[1.0, 1.0], [2.0, 2.0]],
+                ]
+            ]
+        )
+        weights = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])
+        bias = torch.tensor([100.0, 200.0, 300.0, 400.0, 500.0, 600.0])
+        output = group_norm(weights, bias, input, groups=3)
+        self.assertTrue(
+            torch.allclose(
+                output,
+                torch.tensor(
+                    [
+                        [
+                            [[84.7248, 89.0891], [93.4535, 97.8178]],
+                            [[204.3643, 213.0930], [221.8218, 230.5505]],
+                            [[300.0000, 307.2231], [314.4463, 321.6694]],
+                            [[332.5839, 351.8457], [390.3691, 467.4160]],
+                            [[483.0479, 501.9163], [539.6531, 615.1266]],
+                            [[557.7230, 557.7230], [558.4305, 558.4305]],
+                        ]
                     ]
                 ),
             )
@@ -272,6 +306,72 @@ class ConvolutionLayerTests(TestCase):
             )
         )
 
+    def test_convolution_layer_with_padding_at_end(self):
+        output = convolution(
+            self.weights, self.bias, self.input, padding=1, pad_at_end=True
+        )
+        self.assertTrue(
+            torch.allclose(
+                output,
+                torch.tensor(
+                    [
+                        [
+                            [
+                                [702.0, 729.0, 495.0],
+                                [810.0, 837.0, 567.0],
+                                [918.0, 945.0, 639.0],
+                                [648.0, 666.0, 450.0],
+                            ],
+                            [
+                                [79.0, 82.0, 85.0],
+                                [91.0, 94.0, 97.0],
+                                [103.0, 106.0, 109.0],
+                                [115.0, 118.0, 121.0],
+                            ],
+                            [
+                                [64.0, 73.0, 55.0],
+                                [100.0, 109.0, 79.0],
+                                [136.0, 145.0, 103.0],
+                                [106.0, 112.0, 80.0],
+                            ],
+                            [
+                                [178.0, 181.0, 85.0],
+                                [190.0, 193.0, 85.0],
+                                [202.0, 205.0, 85.0],
+                                [85.0, 85.0, 85.0],
+                            ],
+                        ],
+                        [
+                            [
+                                [2322.0, 2349.0, 1575.0],
+                                [2430.0, 2457.0, 1647.0],
+                                [2538.0, 2565.0, 1719.0],
+                                [1728.0, 1746.0, 1170.0],
+                            ],
+                            [
+                                [259.0, 262.0, 265.0],
+                                [271.0, 274.0, 277.0],
+                                [283.0, 286.0, 289.0],
+                                [295.0, 298.0, 301.0],
+                            ],
+                            [
+                                [604.0, 613.0, 415.0],
+                                [640.0, 649.0, 439.0],
+                                [676.0, 685.0, 463.0],
+                                [466.0, 472.0, 320.0],
+                            ],
+                            [
+                                [358.0, 361.0, 85.0],
+                                [370.0, 373.0, 85.0],
+                                [382.0, 385.0, 85.0],
+                                [85.0, 85.0, 85.0],
+                            ],
+                        ],
+                    ]
+                ),
+            )
+        )
+
     def test_convolution_layer_with_stride(self):
         output = convolution(self.weights, self.bias, self.input, stride=2)
         self.assertTrue(
@@ -291,6 +391,25 @@ class ConvolutionLayerTests(TestCase):
                             [[604.0], [676.0]],
                             [[358.0], [382.0]],
                         ],
+                    ]
+                ),
+            )
+        )
+
+
+class SiluLayerTests(TestCase):
+    def test_silu_layer(self):
+        input = torch.tensor(
+            [[-3.0, -2.0, -1.0, 0.0, 1.0, 2.0], [-1.5, -0.5, 0.5, 3.0, 6.0, 12.0]]
+        )
+        output = silu(input)
+        self.assertTrue(
+            torch.allclose(
+                output,
+                torch.tensor(
+                    [
+                        [-0.142278, -0.238406, -0.268941, 0.0, 0.731059, 1.761594],
+                        [-0.273638, -0.188770, 0.311230, 2.857722, 5.985165, 11.999926],
                     ]
                 ),
             )

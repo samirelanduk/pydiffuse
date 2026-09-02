@@ -3,17 +3,30 @@ from pathlib import Path
 
 import click
 import torch
+from PIL import Image
 from safetensors import safe_open
 from transformers import CLIPTokenizer
 
 from pydiffuse.clip import embed as clip_embed
 from pydiffuse.clip import encode as clip_encode
 from pydiffuse.clip import tokenize as clip_tokenize
+from pydiffuse.vae import decode as vae_decode
+from pydiffuse.vae import encode as vae_encode
 
 
 @click.group()
 def cli():
     pass
+
+
+@cli.group()
+def clip():
+    """CLIP text encoding commands."""
+
+
+@cli.group()
+def vae():
+    """VAE encode/decode commands."""
 
 
 def check_parent(ctx, param, value):
@@ -25,7 +38,7 @@ def check_parent(ctx, param, value):
     return value
 
 
-@cli.command()
+@clip.command()
 @click.argument("text")
 @click.option(
     "--tokens",
@@ -63,7 +76,7 @@ def tokenize(text, tokens, mappings, tokenizer):
         json.dump(mapping_lists, f)
 
 
-@cli.command("embed")
+@clip.command("embed")
 @click.argument("tokens", type=click.Path(exists=True, dir_okay=False))
 @click.argument("model", type=click.Path(exists=True, dir_okay=False))
 @click.option(
@@ -83,7 +96,7 @@ def embed(tokens, model, embedding):
     torch.save(embedding_tensor, embedding)
 
 
-@cli.command("encode")
+@clip.command("encode")
 @click.argument("embedding", type=click.Path(exists=True, dir_okay=False))
 @click.argument("model", type=click.Path(exists=True, dir_okay=False))
 @click.option(
@@ -100,6 +113,43 @@ def encode(embedding, model, conditioning):
     with safe_open(model, framework="pt", device="cpu") as tensors:
         conditioning_tensor = clip_encode(embedding_tensor, tensors)
     torch.save(conditioning_tensor, conditioning)
+
+
+@vae.command("encode")
+@click.argument("image", type=click.Path(exists=True, dir_okay=False))
+@click.argument("model", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--latent",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="latent.pt",
+    help="Path to save the latent to.",
+)
+def encode_image(image, model, latent):
+    """Encodes an image into a latent using a VAE."""
+
+    with safe_open(model, framework="pt", device="cpu") as tensors:
+        latent_tensor = vae_encode(Image.open(image), tensors)
+    torch.save(latent_tensor, latent)
+
+
+@vae.command("decode")
+@click.argument("latent", type=click.Path(exists=True, dir_okay=False))
+@click.argument("model", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--image",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="image.jpg",
+    help="Path to save the image to.",
+)
+def decode_latent(latent, model, image):
+    """Decodes a latent into an image using a VAE."""
+
+    latent_tensor = torch.load(latent)
+    with safe_open(model, framework="pt", device="cpu") as tensors:
+        image_obj = vae_decode(latent_tensor, tensors)
+    image_obj.save(image)
 
 
 if __name__ == "__main__":

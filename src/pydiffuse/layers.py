@@ -20,17 +20,21 @@ def group_norm(
     input: torch.Tensor,
     groups: int | None = None,
 ) -> torch.Tensor:
-    """Applies a group normalization to the incoming data. Each vector in the
-    final layer is broken up into groups (by default the entire vector is a
-    single group) and each group is adjusted so that its mean is 0 and its
-    variance is 1, while preserving the relative gaps between the values. It
-    then scales the values by the weight and adds the bias.
+    """Applies a group normalization to the incoming data. The entries in
+    dimension 1 are combined into groups (by default they all form a single
+    group), and each group is adjusted so that its mean is 0 and its variance
+    is 1, while preserving the relative gaps between the values. The values
+    are then scaled by the weight and shifted by the bias, one of each per
+    entry in dimension 1, applied to every value in that entry. Any dimensions
+    after the first two are carried along with the entry containing them, and
+    each entry in dimension 0 is handled independently of the others.
 
+    The weight and bias must be 1D tensors of dimensions matching dimension 1.
     The result is a tensor of the same shape as the input."""
 
     groups = 1 if groups is None else groups
     layer = torch.nn.GroupNorm(
-        num_groups=groups, num_channels=input.shape[-1], device="cpu"
+        num_groups=groups, num_channels=input.shape[1], device="cpu"
     )
     layer.weight = torch.nn.Parameter(weight, requires_grad=False)
     layer.bias = torch.nn.Parameter(bias, requires_grad=False)
@@ -60,6 +64,7 @@ def convolution(
     input: torch.Tensor,
     padding: int = 0,
     stride: int = 1,
+    pad_at_end: bool = False,
 ) -> torch.Tensor:
     """Applies a 2D convolution to the incoming data, which should be a 4D
     tensor of shape [batch, channels, height, width]. The weight must be a 4D
@@ -71,9 +76,12 @@ def convolution(
     outputs a single value for that position using the weights and biases.
 
     Padding adds a border of zeros of the given width to every edge of the
-    input before the kernel is run. Stride is the number of positions the kernel
-    moves between windows, so a stride of 2 halves the output dimensions."""
+    input before the kernel is run. If pad_at_end is True the zeros are added
+    only to the right and bottom edges instead of to all four."""
 
+    if pad_at_end:
+        input = torch.nn.functional.pad(input, (0, padding, 0, padding))
+        padding = 0
     layer = torch.nn.Conv2d(
         in_channels=weight.shape[1],
         out_channels=weight.shape[0],
@@ -84,3 +92,14 @@ def convolution(
     layer.weight = torch.nn.Parameter(weight, requires_grad=False)
     layer.bias = torch.nn.Parameter(bias, requires_grad=False)
     return layer(input)
+
+
+def silu(input: torch.Tensor) -> torch.Tensor:
+    """Applies the SiLU (or swish) activation function to every value in the
+    incoming data, which is the value multiplied by its own sigmoid - that is,
+    x * (1 / (1 + e^-x)). Large positive values are passed through more or less
+    unchanged, and large negative values are squashed towards zero.
+
+    The result is a tensor of the same shape as the input."""
+
+    return input * torch.sigmoid(input)
