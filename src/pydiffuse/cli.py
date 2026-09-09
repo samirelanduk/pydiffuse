@@ -10,6 +10,7 @@ from transformers import CLIPTokenizer
 from pydiffuse.clip import embed as clip_embed
 from pydiffuse.clip import encode as clip_encode
 from pydiffuse.clip import tokenize as clip_tokenize
+from pydiffuse.noise import exponential_schedule, karras_schedule, noise_tensor
 from pydiffuse.vae import decode as vae_decode
 from pydiffuse.vae import encode as vae_encode
 
@@ -27,6 +28,11 @@ def clip():
 @cli.group()
 def vae():
     """VAE encode/decode commands."""
+
+
+@cli.group()
+def noise():
+    """Noise commands."""
 
 
 def check_parent(ctx, param, value):
@@ -150,6 +156,47 @@ def decode_latent(latent, model, image):
     with safe_open(model, framework="pt", device="cpu") as tensors:
         image_obj = vae_decode(latent_tensor, tensors)
     image_obj.save(image)
+
+
+@noise.command("apply")
+@click.argument("tensor", type=click.Path(exists=True, dir_okay=False))
+@click.argument("noise_level", type=click.FloatRange(0, 1))
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="noised.pt",
+    help="Path to save the noised tensor to.",
+)
+def apply_noise(tensor, noise_level, output):
+    """Adds noise to a tensor at the given noise level."""
+
+    noised_tensor = noise_tensor(torch.load(tensor), noise_level)
+    torch.save(noised_tensor, output)
+
+
+@noise.command("schedule")
+@click.argument("steps", type=click.IntRange(1))
+@click.option(
+    "--algorithm",
+    type=click.Choice(["karras", "exponential"]),
+    default="karras",
+    help="The algorithm to generate the schedule with.",
+)
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="schedule.txt",
+    help="Path to save the schedule to.",
+)
+def noise_schedule(steps, algorithm, output):
+    """Generates a noise schedule of the given number of steps."""
+
+    schedules = {"karras": karras_schedule, "exponential": exponential_schedule}
+    levels = schedules[algorithm](steps)
+    with open(output, "w") as f:
+        f.write("\n".join(str(round(level, 8)) for level in levels) + "\n")
 
 
 if __name__ == "__main__":
