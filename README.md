@@ -40,7 +40,7 @@ The library exposes most of its functionality as a Command-Line Interface.
 pydiffuse <group> <command>
 ```
 
-Commands are namespaced by group - currently `clip` and `vae`.
+Commands are namespaced by group - currently `clip`, `vae` and `noise`.
 
 ### CLIP
 
@@ -110,3 +110,92 @@ The model must contain the attention, MLP and layer norm tensors for every encod
 | Option | Default | Description |
 | --- | --- | --- |
 | `--conditioning` | `conditioning.pt` | Path to save the conditioning to. |
+
+### VAE
+
+A VAE compresses an image into a much smaller latent representation that diffusion happens in, and turns that latent back into an image afterwards.
+See [docs/vae.md](docs/vae.md) for an explanation of how the two networks work.
+
+Both commands need model weights in [safetensors](https://github.com/huggingface/safetensors) format, whose VAE tensors are stored under `first_stage_model`.
+
+#### Encoding
+
+`vae encode` compresses an image into a latent.
+
+```bash
+pydiffuse vae encode photo.jpg model.safetensors
+```
+
+This writes `latent.pt`, a `torch.save`-d tensor of shape `(1, channels, height / ratio, width / ratio)`, where `ratio` is the product of the strides of the model's downsampling convolutions.
+Images whose dimensions aren't a multiple of that ratio are centre-cropped to the nearest one that is.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--latent` | `latent.pt` | Path to save the latent to. |
+
+#### Decoding
+
+`vae decode` expands a latent back into an image.
+
+```bash
+pydiffuse vae decode latent.pt model.safetensors
+```
+
+This writes `image.jpg`, at the latent's resolution multiplied by the same ratio.
+The decoder can produce values outside the range it was trained on, and those are clamped rather than wrapped.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--image` | `image.jpg` | Path to save the image to. |
+
+### Noise
+
+Diffusion works by learning to remove noise, so both training and sampling need a way of adding a known amount of noise to a latent, and a schedule of how much noise to use at each step.
+See [docs/noise.md](docs/noise.md) for how noise is added.
+
+A noise level is a number between 0 and 1 giving the proportion of the result that is noise rather than signal, so 0 is a clean latent and 1 is pure noise.
+
+#### Applying noise
+
+`noise apply` adds noise to a tensor at a single noise level.
+
+```bash
+pydiffuse noise apply latent.pt 0.5
+```
+
+This writes `noised.pt`, a tensor of the same shape as the input.
+The tensor and the noise are each scaled by the square root of their share, so the result keeps a variance of 1 (assuming the input had a variance of 1 to start with).
+Fresh noise is drawn on every run, so the same inputs give a different result each time.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--output` | `noised.pt` | Path to save the noised tensor to. |
+
+#### Generating a schedule
+
+`noise schedule` produces the sequence of noise levels a sampler steps through, from the noisiest level down to a clean image.
+
+```bash
+pydiffuse noise schedule 5
+```
+
+This writes `schedule.txt`, one noise level per line rounded to eight decimal places.
+There is always one more line than there are steps, because the schedule ends at 0:
+
+```
+0.9953399
+0.95834503
+0.61880525
+0.05791837
+0.00085
+0.0
+```
+
+Two algorithms are available, both of which space the levels out by their ratio of noise to signal rather than by the level itself, which puts more steps where the latent is nearly clean.
+`karras` is the schedule from [Karras et al. (2022)](https://arxiv.org/abs/2206.00364), which spaces that ratio raised to the power 1/7.
+`exponential` spaces the log of the ratio, so each step reduces it by the same factor.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--algorithm` | `karras` | The algorithm to generate the schedule with - `karras` or `exponential`. |
+| `--output` | `schedule.txt` | Path to save the schedule to. |
