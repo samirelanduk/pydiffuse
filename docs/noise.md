@@ -37,3 +37,16 @@ So for a 0.25/0.75 split, you don’t scale by these fractions, you scale by the
 So you scale the image by 0.5, to produce a tensor with a variance of 0.
 25, and you scale the noise by 0.84, so its variance becomes 0.75.
 Then you add them.
+
+## Sigma
+
+For any noising, there is a noise level and a corresponding 'original' level, which sum to one.
+The square roots of each are the two scaling factors.
+It is the relative size of these two scaling factors which determines how noisy the image is, not their absolute values.
+You could double both and the resulting image would be just as noisy, it would just have a higher variance (specifically four times higher).
+
+This ratio of the two scaling factors is called sigma, and is an alternate way of describing the noise applied.
+A sigma of zero means no noise is added, a sigma of one means equal noise and image (noise factor of 0.5), and as noise factor approaches one, sigma goes off to infinity.
+
+Rather than noising by scaling both tensors by the square roots, you can just add the noise tensor multiplied by sigma, and then divide by the appropriate factor to reduce the variance down to one.
+It is mathematically identical to the previous method.
