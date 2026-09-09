@@ -75,6 +75,9 @@ class ApplyTestCase(NoiseTestCase):
         self.assertFalse(result.stdout.strip())
         self.assertFalse(result.stderr.strip())
 
+        # File is created
+        self.assertTrue((self.test_dir / "noised.pt").exists())
+
         # Original is returned unchanged
         with open(self.test_dir / "noised.pt", "rb") as f:
             noised = torch.load(f)
@@ -88,6 +91,9 @@ class ApplyTestCase(NoiseTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertFalse(result.stdout.strip())
         self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "noised.pt").exists())
 
         # Nothing of the original remains
         with open(self.test_dir / "noised.pt", "rb") as f:
@@ -103,6 +109,9 @@ class ApplyTestCase(NoiseTestCase):
         self.assertFalse(result.stdout.strip())
         self.assertFalse(result.stderr.strip())
 
+        # File is created
+        self.assertTrue((self.test_dir / "noised.pt").exists())
+
         # Noising is correct
         with open(self.test_dir / "noised.pt", "rb") as f:
             noised = torch.load(f)
@@ -117,6 +126,9 @@ class ApplyTestCase(NoiseTestCase):
         self.assertFalse(result.stdout.strip())
         self.assertFalse(result.stderr.strip())
 
+        # File is created
+        self.assertTrue((self.test_dir / "noised.pt").exists())
+
         # Noising is correct
         with open(self.test_dir / "noised.pt", "rb") as f:
             noised = torch.load(f)
@@ -126,6 +138,10 @@ class ApplyTestCase(NoiseTestCase):
         # Run the command twice at the same noise level
         self.run_command(self.tensor_path, "0.5", output="first.pt")
         self.run_command(self.tensor_path, "0.5", output="second.pt")
+
+        # Files are created
+        self.assertTrue((self.test_dir / "first.pt").exists())
+        self.assertTrue((self.test_dir / "second.pt").exists())
 
         # Different noise is drawn each time
         with open(self.test_dir / "first.pt", "rb") as f:
@@ -230,3 +246,162 @@ class ApplyTestCase(NoiseTestCase):
 
         # File is not created
         self.assertFalse((self.test_dir / "noised.pt").exists())
+
+
+class ScheduleTestCase(NoiseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.karras_5 = [0.9953399, 0.95834503, 0.61880525, 0.05791837, 0.00085, 0.0]
+
+    def run_command(self, *args, **kwargs):
+        return super().run_command("schedule", *args, **kwargs)
+
+    def read_schedule(self, path):
+        with open(path) as f:
+            return [float(line) for line in f.read().splitlines()]
+
+    def test_schedule(self):
+        # Run the command with only the required arguments
+        result = self.run_command("5")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "schedule.txt").exists())
+
+        # Schedule is correct for the karras algorithm
+        levels = self.read_schedule(self.test_dir / "schedule.txt")
+        self.assertEqual(levels, self.karras_5)
+
+    def test_single_step_schedule(self):
+        # Run the command with a single step
+        result = self.run_command("1")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "schedule.txt").exists())
+
+        # Schedule is correct
+        levels = self.read_schedule(self.test_dir / "schedule.txt")
+        self.assertEqual(levels, [0.9953399, 0.0])
+
+    def test_can_use_exponential_algorithm(self):
+        # Run the command with the exponential algorithm
+        result = self.run_command("5", algorithm="exponential")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "schedule.txt").exists())
+
+        # Schedule is correct for the exponential algorithm
+        levels = self.read_schedule(self.test_dir / "schedule.txt")
+        self.assertEqual(
+            levels, [0.9953399, 0.90513932, 0.29886924, 0.01868713, 0.00085, 0.0]
+        )
+
+    def test_can_use_karras_algorithm(self):
+        # Run the command with the karras algorithm named explicitly
+        result = self.run_command("5", algorithm="karras")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "schedule.txt").exists())
+
+        # Schedule is correct
+        levels = self.read_schedule(self.test_dir / "schedule.txt")
+        self.assertEqual(levels, self.karras_5)
+
+    def test_can_set_output_path(self):
+        # Run the command with a custom output path
+        output_path = self.test_dir / "custom_schedule.txt"
+        result = self.run_command("5", output=output_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created (in correct place)
+        self.assertTrue(output_path.exists())
+        self.assertFalse((self.test_dir / "schedule.txt").exists())
+
+        # Schedule is correct
+        levels = self.read_schedule(output_path)
+        self.assertEqual(
+            levels, [0.9953399, 0.95834503, 0.61880525, 0.05791837, 0.00085, 0.0]
+        )
+
+    def test_steps_is_required(self):
+        # Run the command with no steps
+        result = self.run_command()
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'STEPS'", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "schedule.txt").exists())
+
+    def test_steps_must_be_an_integer(self):
+        # Run the command with a non-integer number of steps
+        result = self.run_command("2.5")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("'2.5' is not a valid integer", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "schedule.txt").exists())
+
+    def test_steps_must_be_positive(self):
+        # Run the command with zero steps
+        result = self.run_command("0")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("0 is not in the range x>=1", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "schedule.txt").exists())
+
+    def test_algorithm_must_be_known(self):
+        # Run the command with an unknown algorithm
+        result = self.run_command("5", algorithm="linear")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("'linear' is not one of 'karras', 'exponential'", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "schedule.txt").exists())
+
+    def test_output_location_must_exist(self):
+        # Run the command with an output path in a non-existent directory
+        result = self.run_command("5", output="/no/such/path/schedule.txt")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "schedule.txt").exists())
