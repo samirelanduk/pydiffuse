@@ -20,6 +20,7 @@ def unet(
     sinusoid_width = model_tensors["time_embed"][0]["weight"].shape[1]
     sinusoids = _timestep_sinusoids(t, sinusoid_width)
     _time_embed(sinusoids, model_tensors["time_embed"])
+    conditioning = _combine_chunks(conditioning)
 
 
 def _get_unet_tensors(model: safetensors.safe_open) -> dict:
@@ -103,3 +104,12 @@ def _time_embed(x: torch.Tensor, time_embed: list[dict]) -> torch.Tensor:
             x = silu(x)
         x = linear(layer["weight"], layer["bias"], x)
     return x
+
+
+def _combine_chunks(conditioning: torch.Tensor) -> torch.Tensor:
+    """Joins the chunks of a conditioning end to end into a single sequence of
+    token vectors. CLIP encodes each chunk of a long prompt separately, but the
+    UNet attends over every token vector at once, so a conditioning of shape
+    (chunks, tokens, width) becomes (chunks * tokens, width)."""
+
+    return conditioning.reshape(-1, conditioning.shape[-1])
