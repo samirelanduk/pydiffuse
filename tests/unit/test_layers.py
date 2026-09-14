@@ -20,6 +20,12 @@ class LinearLayerTests(TestCase):
         output = linear(weights, bias, input)
         self.assertEqual(output.tolist(), [[312, 713, 1114], [712, 1753, 2794]])
 
+    def test_linear_layer_no_bias(self):
+        input = torch.tensor([[10, 20, 30, 40], [50, 60, 70, 80]])
+        weights = torch.tensor([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]])
+        output = linear(weights, None, input)
+        self.assertEqual(output.tolist(), [[300, 700, 1100], [700, 1740, 2780]])
+
 
 class GroupNormLayerTests(TestCase):
     def test_group_norm_layer(self):

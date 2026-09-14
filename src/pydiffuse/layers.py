@@ -2,15 +2,18 @@ import torch
 
 
 def linear(
-    weight: torch.Tensor, bias: torch.Tensor, input: torch.Tensor
+    weight: torch.Tensor, bias: torch.Tensor | None, input: torch.Tensor
 ) -> torch.Tensor:
     """Applies a linear transformation to the incoming data. The weight must be
     a 2D tensor of dimensions (output_dim, input_dim), and the bias must be a 1D
-    tensor of dimensions (output_dim)."""
+    tensor of dimensions (output_dim), or None if the layer has no bias."""
 
-    layer = torch.nn.Linear(weight.shape[0], weight.shape[1], device="cpu")
+    layer = torch.nn.Linear(
+        weight.shape[1], weight.shape[0], bias=bias is not None, device="cpu"
+    )
     layer.weight = torch.nn.Parameter(weight, requires_grad=False)
-    layer.bias = torch.nn.Parameter(bias, requires_grad=False)
+    if bias is not None:
+        layer.bias = torch.nn.Parameter(bias, requires_grad=False)
     return layer(input)
 
 
