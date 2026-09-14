@@ -4,9 +4,27 @@ import re
 import safetensors
 import torch
 
-from .layers import linear, silu
+from .layers import convolution, gelu, group_norm, layer_norm, linear, silu
 
 MODEL_PREFIX = "model.diffusion_model"
+INPUT_BLOCKS_PREFIX = f"{MODEL_PREFIX}.input_blocks"
+RESNET_LAYERS = (
+    "in_layers.0",
+    "in_layers.2",
+    "emb_layers.1",
+    "out_layers.0",
+    "out_layers.3",
+    "skip_connection",
+)
+TRANSFORMER_LAYERS = ("norm", "proj_in", "proj_out")
+TRANSFORMER_BLOCK_LAYERS = ("norm1", "norm2", "norm3", "ff.net.0.proj", "ff.net.2")
+ATTENTION_LAYERS = ("to_q", "to_k", "to_v", "to_out.0")
+
+CONV_PADDING = 1
+DOWNSAMPLE_PADDING = 1
+DOWNSAMPLE_STRIDE = 2
+NORM_GROUPS = 32
+ATTENTION_HEADS = 8
 
 
 def unet(
@@ -19,21 +37,68 @@ def unet(
     t = _noise_to_t(noise_level)
     sinusoid_width = model_tensors["time_embed"][0]["weight"].shape[1]
     sinusoids = _timestep_sinusoids(t, sinusoid_width)
-    _time_embed(sinusoids, model_tensors["time_embed"])
+    time_embedding = _time_embed(sinusoids, model_tensors["time_embed"])
     conditioning = _combine_chunks(conditioning)
+    _input_blocks(latent, model_tensors["input_blocks"], time_embedding, conditioning)
 
 
 def _get_unet_tensors(model: safetensors.safe_open) -> dict:
-    """Finds the tensors used in the UNet. The time embedding is a list of
-    linear layers, which have activations between them that have no tensors
-    of their own."""
+    """Finds the tensors used in the UNet."""
 
     return {
         "time_embed": [
             _get_layer(model, f"{MODEL_PREFIX}.time_embed.{index}")
             for index in _get_numbers(model, f"{MODEL_PREFIX}.time_embed")
         ],
+        "input_blocks": [
+            _get_input_block_tensors(model, f"{INPUT_BLOCKS_PREFIX}.{index}")
+            for index in _get_numbers(model, INPUT_BLOCKS_PREFIX)
+        ],
     }
+
+
+def _get_input_block_tensors(
+    model: safetensors.safe_open, prefix: str
+) -> list[tuple[str, dict]]:
+    """Finds the tensors of a single input block. A block is a numbered list of
+    parts which are run in order, and each part is a convolution, a residual
+    block, a transformer or a downsampling convolution. Which one a part is
+    depends on the names of its tensors, not on its position in the block, and
+    each part is returned as its type and its tensors."""
+
+    keys = model.keys()
+    parts = []
+    for index in _get_numbers(model, prefix):
+        part_prefix = f"{prefix}.{index}"
+        if f"{part_prefix}.weight" in keys:
+            parts.append(("conv", _get_layer(model, part_prefix)))
+        elif f"{part_prefix}.op.weight" in keys:
+            parts.append(("downsample", _get_layer(model, f"{part_prefix}.op")))
+        elif f"{part_prefix}.in_layers.2.weight" in keys:
+            parts.append(("resnet", _get_layers(model, part_prefix, RESNET_LAYERS)))
+        elif f"{part_prefix}.proj_in.weight" in keys:
+            parts.append(("transformer", _get_transformer_tensors(model, part_prefix)))
+        else:
+            raise ValueError(f"Unrecognised UNet block part: {part_prefix}")
+    return parts
+
+
+def _get_transformer_tensors(model: safetensors.safe_open, prefix: str) -> dict:
+    """Finds the tensors of a transformer, including every transformer block
+    inside it."""
+
+    tensors = _get_layers(model, prefix, TRANSFORMER_LAYERS)
+    tensors["transformer_blocks"] = []
+    for index in _get_numbers(model, f"{prefix}.transformer_blocks"):
+        block_prefix = f"{prefix}.transformer_blocks.{index}"
+        tensors["transformer_blocks"].append(
+            {
+                **_get_layers(model, block_prefix, TRANSFORMER_BLOCK_LAYERS),
+                "attn1": _get_layers(model, f"{block_prefix}.attn1", ATTENTION_LAYERS),
+                "attn2": _get_layers(model, f"{block_prefix}.attn2", ATTENTION_LAYERS),
+            }
+        )
+    return tensors
 
 
 def _get_numbers(model: safetensors.safe_open, prefix: str) -> list[int]:
@@ -50,16 +115,29 @@ def _get_numbers(model: safetensors.safe_open, prefix: str) -> list[int]:
     return sorted(numbers)
 
 
+def _get_layers(
+    model: safetensors.safe_open, prefix: str, names: tuple[str, ...]
+) -> dict:
+    """Gets the weight and bias of each of the given layers under a prefix."""
+
+    return {name: _get_layer(model, f"{prefix}.{name}") for name in names}
+
+
 def _get_layer(model: safetensors.safe_open, prefix: str) -> dict | None:
     """Gets the weight and bias of a single layer, or None if the model has no
-    such layer."""
+    such layer. Some layers have a weight but no bias, in which case the bias is
+    None."""
 
     keys = model.keys()
-    if f"{prefix}.weight" not in keys or f"{prefix}.bias" not in keys:
+    if f"{prefix}.weight" not in keys:
         return None
     return {
         "weight": model.get_tensor(f"{prefix}.weight").float(),
-        "bias": model.get_tensor(f"{prefix}.bias").float(),
+        "bias": (
+            model.get_tensor(f"{prefix}.bias").float()
+            if f"{prefix}.bias" in keys
+            else None
+        ),
     }
 
 
@@ -113,3 +191,165 @@ def _combine_chunks(conditioning: torch.Tensor) -> torch.Tensor:
     (chunks, tokens, width) becomes (chunks * tokens, width)."""
 
     return conditioning.reshape(-1, conditioning.shape[-1])
+
+
+def _input_blocks(
+    x: torch.Tensor,
+    input_blocks: list[list[tuple[str, dict]]],
+    time_embedding: torch.Tensor,
+    conditioning: torch.Tensor,
+) -> tuple[torch.Tensor, list[torch.Tensor]]:
+    """Runs the latent through the input blocks - the downsampling half of the
+    UNet. The first block convolves the latent up to many more channels, and the
+    rest are residual blocks, transformers and downsampling convolutions, so the
+    tensor gets deeper in channels and smaller in height and width as it goes.
+
+    The output of every block is kept, as the output blocks will be given them
+    later to recover the detail that downsampling loses."""
+
+    skips = []
+    for block in input_blocks:
+        for part_type, tensors in block:
+            if part_type == "conv":
+                x = convolution(
+                    tensors["weight"], tensors["bias"], x, padding=CONV_PADDING
+                )
+            elif part_type == "resnet":
+                x = _resnet_block(x, tensors, time_embedding)
+            elif part_type == "transformer":
+                x = _transformer(x, tensors, conditioning)
+            elif part_type == "downsample":
+                x = convolution(
+                    tensors["weight"],
+                    tensors["bias"],
+                    x,
+                    padding=DOWNSAMPLE_PADDING,
+                    stride=DOWNSAMPLE_STRIDE,
+                )
+        skips.append(x)
+    return x, skips
+
+
+def _resnet_block(
+    x: torch.Tensor, block: dict, time_embedding: torch.Tensor
+) -> torch.Tensor:
+    """Applies a residual block to the tensor. The tensor is normalised,
+    activated and convolved twice, and the result is added back onto the
+    original tensor.
+
+    Between the two convolutions, the time embedding is projected down to one
+    value per channel and added on, so that every position in a channel is
+    shifted by the same amount depending on the timestep.
+
+    If the block changes the number of channels, the original tensor is first
+    passed through a 1x1 convolution so that the two can be added together."""
+
+    h = group_norm(
+        block["in_layers.0"]["weight"],
+        block["in_layers.0"]["bias"],
+        x,
+        groups=NORM_GROUPS,
+    )
+    h = silu(h)
+    h = convolution(
+        block["in_layers.2"]["weight"],
+        block["in_layers.2"]["bias"],
+        h,
+        padding=CONV_PADDING,
+    )
+    embedding = silu(time_embedding)
+    embedding = linear(
+        block["emb_layers.1"]["weight"], block["emb_layers.1"]["bias"], embedding
+    )
+    h = h + embedding[:, None, None]
+    h = group_norm(
+        block["out_layers.0"]["weight"],
+        block["out_layers.0"]["bias"],
+        h,
+        groups=NORM_GROUPS,
+    )
+    h = silu(h)
+    h = convolution(
+        block["out_layers.3"]["weight"],
+        block["out_layers.3"]["bias"],
+        h,
+        padding=CONV_PADDING,
+    )
+    if block["skip_connection"] is not None:
+        x = convolution(
+            block["skip_connection"]["weight"], block["skip_connection"]["bias"], x
+        )
+    return x + h
+
+
+def _transformer(
+    x: torch.Tensor, block: dict, conditioning: torch.Tensor
+) -> torch.Tensor:
+    """Applies a transformer to the tensor. The tensor is normalised and
+    projected, then flattened so that every position in the image becomes a
+    vector in a sequence. This sequence is run through each transformer block,
+    unflattened back into an image, projected again, and added back onto the
+    original tensor."""
+
+    h = group_norm(
+        block["norm"]["weight"], block["norm"]["bias"], x, groups=NORM_GROUPS
+    )
+    h = convolution(block["proj_in"]["weight"], block["proj_in"]["bias"], h)
+    channels, height, width = h.shape
+    h = h.view(channels, height * width).transpose(0, 1)
+    for transformer_block in block["transformer_blocks"]:
+        h = _transformer_block(h, transformer_block, conditioning)
+    h = h.transpose(0, 1).contiguous().view(channels, height, width)
+    h = convolution(block["proj_out"]["weight"], block["proj_out"]["bias"], h)
+    return x + h
+
+
+def _transformer_block(
+    x: torch.Tensor, block: dict, conditioning: torch.Tensor
+) -> torch.Tensor:
+    """Applies a transformer block to a sequence of image position vectors. The
+    positions first attend to each other, then to the conditioning's token
+    vectors - which is how the prompt influences the image - and are then each
+    run through a feed forward network. Each of the three stages is normalised
+    first and added back onto the sequence."""
+
+    h = layer_norm(block["norm1"]["weight"], block["norm1"]["bias"], x)
+    x = x + _attention(h, h, block["attn1"])
+    h = layer_norm(block["norm2"]["weight"], block["norm2"]["bias"], x)
+    x = x + _attention(h, conditioning, block["attn2"])
+    h = layer_norm(block["norm3"]["weight"], block["norm3"]["bias"], x)
+    x = x + _feed_forward(h, block)
+    return x
+
+
+def _attention(x: torch.Tensor, targets: torch.Tensor, block: dict) -> torch.Tensor:
+    """Applies multi-head attention, in which every vector in x is scored
+    against every vector in the targets, and is then replaced by a weighted
+    average of them. When the targets are x itself this is self-attention, and
+    when they are the conditioning it is cross-attention.
+
+    The vectors are split into several heads which each do this independently,
+    and the heads' results are joined back together."""
+
+    Q = linear(block["to_q"]["weight"], block["to_q"]["bias"], x)
+    K = linear(block["to_k"]["weight"], block["to_k"]["bias"], targets)
+    V = linear(block["to_v"]["weight"], block["to_v"]["bias"], targets)
+    Q = Q.unflatten(1, (ATTENTION_HEADS, -1)).transpose(0, 1)
+    K = K.unflatten(1, (ATTENTION_HEADS, -1)).transpose(0, 1)
+    V = V.unflatten(1, (ATTENTION_HEADS, -1)).transpose(0, 1)
+    scores = Q @ K.transpose(1, 2) / (Q.shape[-1] ** 0.5)
+    attn_output = torch.softmax(scores, dim=-1) @ V
+    attn_output = attn_output.transpose(0, 1).flatten(1)
+    return linear(block["to_out.0"]["weight"], block["to_out.0"]["bias"], attn_output)
+
+
+def _feed_forward(x: torch.Tensor, block: dict) -> torch.Tensor:
+    """Applies a transformer block's feed forward network to every vector in the
+    sequence. The first linear layer produces two halves - one is activated and
+    used as a gate that scales the other - and the second linear layer reduces
+    the result back to the original width."""
+
+    h = linear(block["ff.net.0.proj"]["weight"], block["ff.net.0.proj"]["bias"], x)
+    h, gate = h.chunk(2, dim=-1)
+    h = h * gelu(gate)
+    return linear(block["ff.net.2"]["weight"], block["ff.net.2"]["bias"], h)
