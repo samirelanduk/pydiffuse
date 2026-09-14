@@ -11,6 +11,7 @@ from pydiffuse.clip import embed as clip_embed
 from pydiffuse.clip import encode as clip_encode
 from pydiffuse.clip import tokenize as clip_tokenize
 from pydiffuse.noise import exponential_schedule, karras_schedule, noise_tensor
+from pydiffuse.unet import unet as unet_predict
 from pydiffuse.vae import decode as vae_decode
 from pydiffuse.vae import encode as vae_encode
 
@@ -33,6 +34,11 @@ def vae():
 @cli.group()
 def noise():
     """Noise commands."""
+
+
+@cli.group()
+def unet():
+    """UNet commands."""
 
 
 def check_parent(ctx, param, value):
@@ -197,6 +203,30 @@ def noise_schedule(steps, algorithm, output):
     levels = schedules[algorithm](steps)
     with open(output, "w") as f:
         f.write("\n".join(str(round(level, 8)) for level in levels) + "\n")
+
+
+@unet.command("predict")
+@click.argument("latent", type=click.Path(exists=True, dir_okay=False))
+@click.argument("noise_level", type=click.FloatRange(0, 1))
+@click.argument("conditioning", type=click.Path(exists=True, dir_okay=False))
+@click.argument("model", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--noise",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="noise.pt",
+    help="Path to save the noise prediction to.",
+)
+def predict_noise(latent, noise_level, conditioning, model, noise):
+    """Predicts the noise in a noised latent using a UNet."""
+
+    latent_tensor = torch.load(latent)
+    conditioning_tensor = torch.load(conditioning)
+    with safe_open(model, framework="pt", device="cpu") as tensors:
+        prediction_tensor = unet_predict(
+            latent_tensor, noise_level, conditioning_tensor, tensors
+        )
+    torch.save(prediction_tensor, noise)
 
 
 if __name__ == "__main__":
