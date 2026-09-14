@@ -1,3 +1,5 @@
+import math
+
 import torch
 
 
@@ -106,3 +108,15 @@ def silu(input: torch.Tensor) -> torch.Tensor:
     The result is a tensor of the same shape as the input."""
 
     return input * torch.sigmoid(input)
+
+
+def gelu(input: torch.Tensor) -> torch.Tensor:
+    """Applies the GELU activation function to every value in the incoming
+    data, which is the value multiplied by the chance that a value drawn from a
+    standard normal distribution is smaller than it. Like SiLU, large positive
+    values are passed through more or less unchanged, and large negative values
+    are squashed towards zero.
+
+    The result is a tensor of the same shape as the input."""
+
+    return input * 0.5 * (1.0 + torch.erf(input / math.sqrt(2.0)))

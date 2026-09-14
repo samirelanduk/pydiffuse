@@ -2,7 +2,7 @@ from unittest import TestCase
 
 import torch
 
-from pydiffuse.layers import convolution, group_norm, layer_norm, linear, silu
+from pydiffuse.layers import convolution, gelu, group_norm, layer_norm, linear, silu
 
 
 class LinearLayerTests(TestCase):
@@ -418,5 +418,25 @@ class SiluLayerTests(TestCase):
                         [-0.273638, -0.188770, 0.311230, 2.857722, 5.985165, 11.999926],
                     ]
                 ),
+            )
+        )
+
+
+class GeluLayerTests(TestCase):
+    def test_gelu_layer(self):
+        input = torch.tensor(
+            [[-3.0, -2.0, -1.0, 0.0, 1.0, 2.0], [-1.5, -0.5, 0.5, 3.0, 6.0, 12.0]]
+        )
+        output = gelu(input)
+        self.assertTrue(
+            torch.allclose(
+                output,
+                torch.tensor(
+                    [
+                        [-0.004050, -0.045500, -0.158655, 0.0, 0.841345, 1.954500],
+                        [-0.100211, -0.154269, 0.345731, 2.995950, 6.0, 12.0],
+                    ]
+                ),
+                atol=1e-6,
             )
         )
