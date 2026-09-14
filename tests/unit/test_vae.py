@@ -53,7 +53,7 @@ class EncodeTests(TestCase):
             "conv_out": "conv_out",
             "quant_conv": {"weight": "quant weight", "bias": "quant bias"},
         }
-        mock_convolution.return_value.shape = (1, 8, 4, 4)
+        mock_convolution.return_value.shape = (8, 4, 4)
         image = Mock(Image.Image)
         model = Mock(safetensors.safe_open)
         latent = encode(image, model)
@@ -75,7 +75,7 @@ class EncodeTests(TestCase):
         mock_down.assert_called_once_with(mock_convolution.return_value, "down")
         mock_mid.assert_called_once_with(mock_down.return_value, "mid")
         mock_out.assert_called_once_with(mock_mid.return_value, "norm_out", "conv_out")
-        mock_convolution.return_value.narrow.assert_called_once_with(1, 0, 4)
+        mock_convolution.return_value.narrow.assert_called_once_with(0, 0, 4)
 
 
 class DecodeTests(TestCase):
@@ -433,11 +433,9 @@ class ImageToTensorTests(TestCase):
                 result,
                 torch.tensor(
                     [
-                        [
-                            [[-1.0, 1.0], [-1.0, 1.0]],
-                            [[-1.0, 1.0], [1.0, -1.0]],
-                            [[-1.0, 1.0], [-1.0, 1.0]],
-                        ]
+                        [[-1.0, 1.0], [-1.0, 1.0]],
+                        [[-1.0, 1.0], [1.0, -1.0]],
+                        [[-1.0, 1.0], [-1.0, 1.0]],
                     ]
                 ),
             )
@@ -454,37 +452,35 @@ class ImageToTensorTests(TestCase):
                 torch.tensor(
                     [
                         [
-                            [
-                                [-1.0, -0.6, 0.6, 1.0],
-                                [-1.0, -0.6, 0.6, 1.0],
-                                [-1.0, -0.6, 0.6, 1.0],
-                                [-1.0, -0.6, 0.6, 1.0],
-                                [-1.0, -0.6, 0.6, 1.0],
-                                [-1.0, -0.6, 0.6, 1.0],
-                                [-1.0, -0.6, 0.6, 1.0],
-                                [-1.0, -0.6, 0.6, 1.0],
-                            ],
-                            [
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-0.6, -0.6, -0.6, -0.6],
-                                [0.6, 0.6, 0.6, 0.6],
-                                [1.0, 1.0, 1.0, 1.0],
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-0.6, -0.6, -0.6, -0.6],
-                                [0.6, 0.6, 0.6, 0.6],
-                                [1.0, 1.0, 1.0, 1.0],
-                            ],
-                            [
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-1.0, -1.0, -1.0, -1.0],
-                                [-1.0, -1.0, -1.0, -1.0],
-                            ],
-                        ]
+                            [-1.0, -0.6, 0.6, 1.0],
+                            [-1.0, -0.6, 0.6, 1.0],
+                            [-1.0, -0.6, 0.6, 1.0],
+                            [-1.0, -0.6, 0.6, 1.0],
+                            [-1.0, -0.6, 0.6, 1.0],
+                            [-1.0, -0.6, 0.6, 1.0],
+                            [-1.0, -0.6, 0.6, 1.0],
+                            [-1.0, -0.6, 0.6, 1.0],
+                        ],
+                        [
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-0.6, -0.6, -0.6, -0.6],
+                            [0.6, 0.6, 0.6, 0.6],
+                            [1.0, 1.0, 1.0, 1.0],
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-0.6, -0.6, -0.6, -0.6],
+                            [0.6, 0.6, 0.6, 0.6],
+                            [1.0, 1.0, 1.0, 1.0],
+                        ],
+                        [
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-1.0, -1.0, -1.0, -1.0],
+                            [-1.0, -1.0, -1.0, -1.0],
+                        ],
                     ]
                 ),
             )
@@ -499,11 +495,9 @@ class ImageToTensorTests(TestCase):
                 result,
                 torch.tensor(
                     [
-                        [
-                            [[-1.0, 1.0], [-1.0, 1.0]],
-                            [[-1.0, 1.0], [-1.0, 1.0]],
-                            [[-1.0, 1.0], [-1.0, 1.0]],
-                        ]
+                        [[-1.0, 1.0], [-1.0, 1.0]],
+                        [[-1.0, 1.0], [-1.0, 1.0]],
+                        [[-1.0, 1.0], [-1.0, 1.0]],
                     ]
                 ),
             )
@@ -514,11 +508,9 @@ class TensorToImageTests(TestCase):
     def test_tensor_to_image(self):
         x = torch.tensor(
             [
-                [
-                    [[-1.0, 0.0], [1.0, 2.0]],
-                    [[-2.0, 1.0], [0.0, -1.0]],
-                    [[0.0, -1.0], [1.0, 0.0]],
-                ]
+                [[-1.0, 0.0], [1.0, 2.0]],
+                [[-2.0, 1.0], [0.0, -1.0]],
+                [[0.0, -1.0], [1.0, 0.0]],
             ]
         )
         image = _tensor_to_image(x)
@@ -597,7 +589,7 @@ class ResnetBlockTests(TestCase):
     @patch("pydiffuse.vae.silu")
     @patch("pydiffuse.vae.convolution")
     def test_resnet_block(self, mock_convolution, mock_silu, mock_group_norm):
-        x = torch.tensor([[[[1.0, 2.0]]]])
+        x = torch.tensor([[[1.0, 2.0]]])
         block = {
             "norm1": {"weight": "norm1 weight", "bias": "norm1 bias"},
             "conv1": {"weight": "conv1 weight", "bias": "conv1 bias"},
@@ -606,19 +598,19 @@ class ResnetBlockTests(TestCase):
             "nin_shortcut": None,
         }
         mock_group_norm.side_effect = [
-            torch.tensor([[[[10.0, 20.0]]]]),
-            torch.tensor([[[[30.0, 40.0]]]]),
+            torch.tensor([[[10.0, 20.0]]]),
+            torch.tensor([[[30.0, 40.0]]]),
         ]
         mock_silu.side_effect = [
-            torch.tensor([[[[11.0, 21.0]]]]),
-            torch.tensor([[[[31.0, 41.0]]]]),
+            torch.tensor([[[11.0, 21.0]]]),
+            torch.tensor([[[31.0, 41.0]]]),
         ]
         mock_convolution.side_effect = [
-            torch.tensor([[[[12.0, 22.0]]]]),
-            torch.tensor([[[[100.0, 200.0]]]]),
+            torch.tensor([[[12.0, 22.0]]]),
+            torch.tensor([[[100.0, 200.0]]]),
         ]
         result = _resnet_block(x, block)
-        self.assertTrue(torch.equal(result, torch.tensor([[[[101.0, 202.0]]]])))
+        self.assertTrue(torch.equal(result, torch.tensor([[[101.0, 202.0]]])))
         self.assertEqual(
             mock_group_norm.call_args_list[0][0][:2], ("norm1 weight", "norm1 bias")
         )
@@ -630,18 +622,18 @@ class ResnetBlockTests(TestCase):
         self.assertTrue(
             torch.equal(
                 mock_group_norm.call_args_list[1][0][2],
-                torch.tensor([[[[12.0, 22.0]]]]),
+                torch.tensor([[[12.0, 22.0]]]),
             )
         )
         self.assertEqual(mock_group_norm.call_args_list[1][1], {"groups": 32})
         self.assertTrue(
             torch.equal(
-                mock_silu.call_args_list[0][0][0], torch.tensor([[[[10.0, 20.0]]]])
+                mock_silu.call_args_list[0][0][0], torch.tensor([[[10.0, 20.0]]])
             )
         )
         self.assertTrue(
             torch.equal(
-                mock_silu.call_args_list[1][0][0], torch.tensor([[[[30.0, 40.0]]]])
+                mock_silu.call_args_list[1][0][0], torch.tensor([[[30.0, 40.0]]])
             )
         )
         self.assertEqual(
@@ -650,7 +642,7 @@ class ResnetBlockTests(TestCase):
         self.assertTrue(
             torch.equal(
                 mock_convolution.call_args_list[0][0][2],
-                torch.tensor([[[[11.0, 21.0]]]]),
+                torch.tensor([[[11.0, 21.0]]]),
             )
         )
         self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})
@@ -660,7 +652,7 @@ class ResnetBlockTests(TestCase):
         self.assertTrue(
             torch.equal(
                 mock_convolution.call_args_list[1][0][2],
-                torch.tensor([[[[31.0, 41.0]]]]),
+                torch.tensor([[[31.0, 41.0]]]),
             )
         )
         self.assertEqual(mock_convolution.call_args_list[1][1], {"padding": 1})
@@ -672,7 +664,7 @@ class ResnetBlockTests(TestCase):
     def test_resnet_block_with_shortcut(
         self, mock_convolution, mock_silu, mock_group_norm
     ):
-        x = torch.tensor([[[[1.0, 2.0]]]])
+        x = torch.tensor([[[1.0, 2.0]]])
         block = {
             "norm1": {"weight": "norm1 weight", "bias": "norm1 bias"},
             "conv1": {"weight": "conv1 weight", "bias": "conv1 bias"},
@@ -681,20 +673,20 @@ class ResnetBlockTests(TestCase):
             "nin_shortcut": {"weight": "shortcut weight", "bias": "shortcut bias"},
         }
         mock_group_norm.side_effect = [
-            torch.tensor([[[[10.0, 20.0]]]]),
-            torch.tensor([[[[30.0, 40.0]]]]),
+            torch.tensor([[[10.0, 20.0]]]),
+            torch.tensor([[[30.0, 40.0]]]),
         ]
         mock_silu.side_effect = [
-            torch.tensor([[[[11.0, 21.0]]]]),
-            torch.tensor([[[[31.0, 41.0]]]]),
+            torch.tensor([[[11.0, 21.0]]]),
+            torch.tensor([[[31.0, 41.0]]]),
         ]
         mock_convolution.side_effect = [
-            torch.tensor([[[[12.0, 22.0]]]]),
-            torch.tensor([[[[100.0, 200.0]]]]),
-            torch.tensor([[[[5.0, 6.0]]]]),
+            torch.tensor([[[12.0, 22.0]]]),
+            torch.tensor([[[100.0, 200.0]]]),
+            torch.tensor([[[5.0, 6.0]]]),
         ]
         result = _resnet_block(x, block)
-        self.assertTrue(torch.equal(result, torch.tensor([[[[105.0, 206.0]]]])))
+        self.assertTrue(torch.equal(result, torch.tensor([[[105.0, 206.0]]])))
         self.assertEqual(
             mock_group_norm.call_args_list[0][0][:2], ("norm1 weight", "norm1 bias")
         )
@@ -706,18 +698,18 @@ class ResnetBlockTests(TestCase):
         self.assertTrue(
             torch.equal(
                 mock_group_norm.call_args_list[1][0][2],
-                torch.tensor([[[[12.0, 22.0]]]]),
+                torch.tensor([[[12.0, 22.0]]]),
             )
         )
         self.assertEqual(mock_group_norm.call_args_list[1][1], {"groups": 32})
         self.assertTrue(
             torch.equal(
-                mock_silu.call_args_list[0][0][0], torch.tensor([[[[10.0, 20.0]]]])
+                mock_silu.call_args_list[0][0][0], torch.tensor([[[10.0, 20.0]]])
             )
         )
         self.assertTrue(
             torch.equal(
-                mock_silu.call_args_list[1][0][0], torch.tensor([[[[30.0, 40.0]]]])
+                mock_silu.call_args_list[1][0][0], torch.tensor([[[30.0, 40.0]]])
             )
         )
         self.assertEqual(
@@ -726,7 +718,7 @@ class ResnetBlockTests(TestCase):
         self.assertTrue(
             torch.equal(
                 mock_convolution.call_args_list[0][0][2],
-                torch.tensor([[[[11.0, 21.0]]]]),
+                torch.tensor([[[11.0, 21.0]]]),
             )
         )
         self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})
@@ -736,7 +728,7 @@ class ResnetBlockTests(TestCase):
         self.assertTrue(
             torch.equal(
                 mock_convolution.call_args_list[1][0][2],
-                torch.tensor([[[[31.0, 41.0]]]]),
+                torch.tensor([[[31.0, 41.0]]]),
             )
         )
         self.assertEqual(mock_convolution.call_args_list[1][1], {"padding": 1})
@@ -768,7 +760,7 @@ class AttentionBlockTests(TestCase):
     @patch("pydiffuse.vae.group_norm")
     @patch("pydiffuse.vae.convolution")
     def test_attention_block(self, mock_convolution, mock_group_norm):
-        x = torch.tensor([[[[1.0, 2.0]], [[3.0, 4.0]]]])
+        x = torch.tensor([[[1.0, 2.0]], [[3.0, 4.0]]])
         block = {
             "norm": {"weight": "norm weight", "bias": "norm bias"},
             "q": {"weight": "q weight", "bias": "q bias"},
@@ -776,16 +768,16 @@ class AttentionBlockTests(TestCase):
             "v": {"weight": "v weight", "bias": "v bias"},
             "proj_out": {"weight": "proj weight", "bias": "proj bias"},
         }
-        mock_group_norm.return_value = torch.tensor([[[[9.0, 8.0]], [[7.0, 6.0]]]])
+        mock_group_norm.return_value = torch.tensor([[[9.0, 8.0]], [[7.0, 6.0]]])
         mock_convolution.side_effect = [
-            torch.zeros(1, 2, 1, 2),
-            torch.tensor([[[[5.0, 6.0]], [[7.0, 8.0]]]]),
-            torch.tensor([[[[1.0, 2.0]], [[3.0, 4.0]]]]),
-            torch.tensor([[[[10.0, 20.0]], [[30.0, 40.0]]]]),
+            torch.zeros(2, 1, 2),
+            torch.tensor([[[5.0, 6.0]], [[7.0, 8.0]]]),
+            torch.tensor([[[1.0, 2.0]], [[3.0, 4.0]]]),
+            torch.tensor([[[10.0, 20.0]], [[30.0, 40.0]]]),
         ]
         result = _attention_block(x, block)
         self.assertTrue(
-            torch.equal(result, torch.tensor([[[[11.0, 22.0]], [[33.0, 44.0]]]]))
+            torch.equal(result, torch.tensor([[[11.0, 22.0]], [[33.0, 44.0]]]))
         )
         self.assertEqual(
             mock_group_norm.call_args_list[0][0][:2], ("norm weight", "norm bias")
@@ -805,13 +797,13 @@ class AttentionBlockTests(TestCase):
             self.assertTrue(
                 torch.equal(
                     mock_convolution.call_args_list[index][0][2],
-                    torch.tensor([[[[9.0, 8.0]], [[7.0, 6.0]]]]),
+                    torch.tensor([[[9.0, 8.0]], [[7.0, 6.0]]]),
                 )
             )
         self.assertTrue(
             torch.equal(
                 mock_convolution.call_args_list[3][0][2],
-                torch.tensor([[[[1.5, 1.5]], [[3.5, 3.5]]]]),
+                torch.tensor([[[1.5, 1.5]], [[3.5, 3.5]]]),
             )
         )
 
@@ -838,7 +830,7 @@ class OutLayersTests(TestCase):
 class UpsampleTests(TestCase):
     @patch("pydiffuse.vae.convolution")
     def test_upsample(self, mock_convolution):
-        x = torch.tensor([[[[1.0, 2.0]]]])
+        x = torch.tensor([[[1.0, 2.0]]])
         upsample = {"weight": "upsample weight", "bias": "upsample bias"}
         result = _upsample(x, upsample)
         self.assertEqual(result, mock_convolution.return_value)
@@ -849,7 +841,7 @@ class UpsampleTests(TestCase):
         self.assertTrue(
             torch.equal(
                 mock_convolution.call_args_list[0][0][2],
-                torch.tensor([[[[1.0, 1.0, 2.0, 2.0], [1.0, 1.0, 2.0, 2.0]]]]),
+                torch.tensor([[[1.0, 1.0, 2.0, 2.0], [1.0, 1.0, 2.0, 2.0]]]),
             )
         )
         self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})

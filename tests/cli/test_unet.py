@@ -40,7 +40,7 @@ class UnetPredictTestCase(UnetTestCase):
     def create_latent(self):
         latent_path = self.test_dir / "latent.pt"
         torch.manual_seed(42)
-        torch.save(torch.randn(1, 4, 8, 8), latent_path)
+        torch.save(torch.randn(4, 8, 8), latent_path)
         return latent_path
 
     def run_command(self, *args, **kwargs):

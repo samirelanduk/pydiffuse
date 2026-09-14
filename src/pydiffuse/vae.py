@@ -40,7 +40,7 @@ def encode(image: Image.Image, model: safetensors.safe_open) -> torch.Tensor:
         model_tensors["quant_conv"]["bias"],
         x,
     )
-    x = x.narrow(1, 0, x.shape[1] // 2)
+    x = x.narrow(0, 0, x.shape[0] // 2)
     return x
 
 
@@ -173,8 +173,8 @@ def _image_to_tensor(image: Image.Image, downscale_ratio: int) -> torch.Tensor:
     pixels = torch.tensor(bytearray(rgb.tobytes()), dtype=torch.float32)
     pixels = pixels.reshape(height, width, 3)
     pixels = pixels / 255.0 * 2.0 - 1.0
-    pixels = pixels.permute(2, 0, 1).unsqueeze(0)
-    for dimension, size in ((2, height), (3, width)):
+    pixels = pixels.permute(2, 0, 1)
+    for dimension, size in ((1, height), (2, width)):
         cropped = size - (size % downscale_ratio)
         if cropped != size:
             offset = (size % downscale_ratio) // 2
@@ -188,7 +188,7 @@ def _tensor_to_image(x: torch.Tensor) -> Image.Image:
     given are clamped, as the decoder is under no obligation to stay inside
     it."""
 
-    pixels = x.squeeze(0).permute(1, 2, 0)
+    pixels = x.permute(1, 2, 0)
     pixels = ((pixels + 1.0) / 2.0).clamp(0.0, 1.0)
     pixels = (pixels * 255.0).round().to(torch.uint8)
     return Image.fromarray(pixels.contiguous().numpy(), mode="RGB")
@@ -291,16 +291,14 @@ def _attention_block(x: torch.Tensor, block: dict) -> torch.Tensor:
     Q = convolution(block["q"]["weight"], block["q"]["bias"], attn_x)
     K = convolution(block["k"]["weight"], block["k"]["bias"], attn_x)
     V = convolution(block["v"]["weight"], block["v"]["bias"], attn_x)
-    batch, channels, height, width = Q.shape
+    channels, height, width = Q.shape
     positions = height * width
-    Q = Q.view(batch, channels, positions).transpose(1, 2)
-    K = K.view(batch, channels, positions)
-    V = V.view(batch, channels, positions).transpose(1, 2)
+    Q = Q.view(channels, positions).transpose(0, 1)
+    K = K.view(channels, positions)
+    V = V.view(channels, positions).transpose(0, 1)
     scores = Q @ K / (Q.shape[-1] ** 0.5)
     attn_output = torch.softmax(scores, dim=-1) @ V
-    attn_output = (
-        attn_output.transpose(1, 2).contiguous().view(batch, channels, height, width)
-    )
+    attn_output = attn_output.transpose(0, 1).contiguous().view(channels, height, width)
     attn_output = convolution(
         block["proj_out"]["weight"], block["proj_out"]["bias"], attn_output
     )
@@ -323,7 +321,7 @@ def _upsample(x: torch.Tensor, upsample: dict) -> torch.Tensor:
     2x2 square of its own, then runs a convolution over the result to smooth out
     the blockiness that repeating produces."""
 
+    x = x.repeat_interleave(UPSAMPLE_SCALE, dim=1)
     x = x.repeat_interleave(UPSAMPLE_SCALE, dim=2)
-    x = x.repeat_interleave(UPSAMPLE_SCALE, dim=3)
     x = convolution(upsample["weight"], upsample["bias"], x, padding=CONV_PADDING)
     return x
