@@ -29,3 +29,15 @@ def _noise_to_t(noise_level) -> int:
             return t if log_ratio - target <= target - previous else t - 1
         previous = log_ratio
     return 999
+
+
+def _timestep_embedding(t: int, width: int) -> torch.Tensor:
+    """Converts a timestep into a vector of sinusoids, so that the UNet sees
+    nearby timesteps as similar vectors. Half of the vector is cosines and half
+    is sines, of t multiplied by frequencies spaced geometrically from 1 down to
+    1 / 10000."""
+
+    half = width // 2
+    frequencies = torch.exp(-math.log(10000) * torch.arange(half) / half)
+    angles = t * frequencies
+    return torch.cat([torch.cos(angles), torch.sin(angles)])
