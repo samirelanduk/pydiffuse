@@ -9,6 +9,7 @@ from .layers import convolution, gelu, group_norm, layer_norm, linear, silu
 MODEL_PREFIX = "model.diffusion_model"
 INPUT_BLOCKS_PREFIX = f"{MODEL_PREFIX}.input_blocks"
 MIDDLE_BLOCK_PREFIX = f"{MODEL_PREFIX}.middle_block"
+OUTPUT_BLOCKS_PREFIX = f"{MODEL_PREFIX}.output_blocks"
 RESNET_LAYERS = (
     "in_layers.0",
     "in_layers.2",
@@ -24,6 +25,7 @@ ATTENTION_LAYERS = ("to_q", "to_k", "to_v", "to_out.0")
 CONV_PADDING = 1
 DOWNSAMPLE_PADDING = 1
 DOWNSAMPLE_STRIDE = 2
+UPSAMPLE_SCALE = 2
 NORM_GROUPS = 32
 ATTENTION_HEADS = 8
 
@@ -40,10 +42,13 @@ def unet(
     sinusoids = _timestep_sinusoids(t, sinusoid_width)
     time_embedding = _time_embed(sinusoids, model_tensors["time_embed"])
     conditioning = _combine_chunks(conditioning)
-    x, _ = _input_blocks(
+    x, skips = _input_blocks(
         latent, model_tensors["input_blocks"], time_embedding, conditioning
     )
-    _block(x, model_tensors["middle_block"], time_embedding, conditioning)
+    x = _block(x, model_tensors["middle_block"], time_embedding, conditioning)
+    _output_blocks(
+        x, skips, model_tensors["output_blocks"], time_embedding, conditioning
+    )
 
 
 def _get_unet_tensors(model: safetensors.safe_open) -> dict:
@@ -59,18 +64,23 @@ def _get_unet_tensors(model: safetensors.safe_open) -> dict:
             for index in _get_numbers(model, INPUT_BLOCKS_PREFIX)
         ],
         "middle_block": _get_block_tensors(model, MIDDLE_BLOCK_PREFIX),
+        "output_blocks": [
+            _get_block_tensors(model, f"{OUTPUT_BLOCKS_PREFIX}.{index}")
+            for index in _get_numbers(model, OUTPUT_BLOCKS_PREFIX)
+        ],
     }
 
 
 def _get_block_tensors(
     model: safetensors.safe_open, prefix: str
 ) -> list[tuple[str, dict]]:
-    """Finds the tensors of a single block, such as one of the input blocks or
-    the middle block. A block is a numbered list of parts which are run in
-    order, and each part is a convolution, a residual block, a transformer or a
-    downsampling convolution. Which one a part is depends on the names of its
-    tensors, not on its position in the block, and each part is returned as its
-    type and its tensors."""
+    """Finds the tensors of a single block, such as one of the input blocks, the
+    middle block, or one of the output blocks. A block is a numbered list of
+    parts which are run in order, and each part is a convolution, a residual
+    block, a transformer, a downsampling convolution or an upsampling
+    convolution. Which one a part is depends on the names of its tensors, not on
+    its position in the block, and each part is returned as its type and its
+    tensors."""
 
     keys = model.keys()
     parts = []
@@ -80,6 +90,8 @@ def _get_block_tensors(
             parts.append(("conv", _get_layer(model, part_prefix)))
         elif f"{part_prefix}.op.weight" in keys:
             parts.append(("downsample", _get_layer(model, f"{part_prefix}.op")))
+        elif f"{part_prefix}.conv.weight" in keys:
+            parts.append(("upsample", _get_layer(model, f"{part_prefix}.conv")))
         elif f"{part_prefix}.in_layers.2.weight" in keys:
             parts.append(("resnet", _get_layers(model, part_prefix, RESNET_LAYERS)))
         elif f"{part_prefix}.proj_in.weight" in keys:
@@ -225,10 +237,13 @@ def _block(
     block: list[tuple[str, dict]],
     time_embedding: torch.Tensor,
     conditioning: torch.Tensor,
+    upsample_size: tuple[int, int] | None = None,
 ) -> torch.Tensor:
     """Runs the tensor through each part of a single block in order. Residual
     blocks are given the time embedding, transformers are given the
-    conditioning, and convolutions need neither."""
+    conditioning, and convolutions need neither. An upsampling convolution
+    grows the tensor to the upsample size if one is given, and doubles its
+    height and width otherwise."""
 
     for part_type, tensors in block:
         if part_type == "conv":
@@ -245,6 +260,32 @@ def _block(
                 padding=DOWNSAMPLE_PADDING,
                 stride=DOWNSAMPLE_STRIDE,
             )
+        elif part_type == "upsample":
+            x = _upsample(x, tensors, upsample_size)
+    return x
+
+
+def _output_blocks(
+    x: torch.Tensor,
+    skips: list[torch.Tensor],
+    output_blocks: list[list[tuple[str, dict]]],
+    time_embedding: torch.Tensor,
+    conditioning: torch.Tensor,
+) -> torch.Tensor:
+    """Runs the tensor through the output blocks - the upsampling half of the
+    UNet. Before each block, the most recently kept output of the input blocks
+    is joined onto the tensor as extra channels, so the output blocks work
+    through the input blocks' outputs in reverse. The tensor gets shallower in
+    channels and larger in height and width as it goes.
+
+    When a block upsamples, it grows the tensor to the height and width of the
+    next output it will be joined with. This is usually exactly double, but not
+    when downsampling had to round an odd height or width up."""
+
+    for block in output_blocks:
+        x = torch.cat([x, skips.pop()])
+        upsample_size = (skips[-1].shape[1], skips[-1].shape[2]) if skips else None
+        x = _block(x, block, time_embedding, conditioning, upsample_size)
     return x
 
 
@@ -371,3 +412,21 @@ def _feed_forward(x: torch.Tensor, block: dict) -> torch.Tensor:
     h, gate = h.chunk(2, dim=-1)
     h = h * gelu(gate)
     return linear(block["ff.net.2"]["weight"], block["ff.net.2"]["bias"], h)
+
+
+def _upsample(
+    x: torch.Tensor, upsample: dict, size: tuple[int, int] | None = None
+) -> torch.Tensor:
+    """Doubles the height and width of the tensor by repeating each value into a
+    2x2 square of its own, then runs a convolution over the result to smooth out
+    the blockiness that repeating produces.
+
+    If a size is given, the repeated tensor is cropped from the bottom and right
+    down to that height and width before the convolution."""
+
+    x = x.repeat_interleave(UPSAMPLE_SCALE, dim=1)
+    x = x.repeat_interleave(UPSAMPLE_SCALE, dim=2)
+    if size is not None:
+        x = x[:, : size[0], : size[1]]
+    x = convolution(upsample["weight"], upsample["bias"], x, padding=CONV_PADDING)
+    return x
