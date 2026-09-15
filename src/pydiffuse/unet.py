@@ -8,6 +8,7 @@ from .layers import convolution, gelu, group_norm, layer_norm, linear, silu
 
 MODEL_PREFIX = "model.diffusion_model"
 INPUT_BLOCKS_PREFIX = f"{MODEL_PREFIX}.input_blocks"
+MIDDLE_BLOCK_PREFIX = f"{MODEL_PREFIX}.middle_block"
 RESNET_LAYERS = (
     "in_layers.0",
     "in_layers.2",
@@ -39,7 +40,10 @@ def unet(
     sinusoids = _timestep_sinusoids(t, sinusoid_width)
     time_embedding = _time_embed(sinusoids, model_tensors["time_embed"])
     conditioning = _combine_chunks(conditioning)
-    _input_blocks(latent, model_tensors["input_blocks"], time_embedding, conditioning)
+    x, _ = _input_blocks(
+        latent, model_tensors["input_blocks"], time_embedding, conditioning
+    )
+    _block(x, model_tensors["middle_block"], time_embedding, conditioning)
 
 
 def _get_unet_tensors(model: safetensors.safe_open) -> dict:
@@ -51,20 +55,22 @@ def _get_unet_tensors(model: safetensors.safe_open) -> dict:
             for index in _get_numbers(model, f"{MODEL_PREFIX}.time_embed")
         ],
         "input_blocks": [
-            _get_input_block_tensors(model, f"{INPUT_BLOCKS_PREFIX}.{index}")
+            _get_block_tensors(model, f"{INPUT_BLOCKS_PREFIX}.{index}")
             for index in _get_numbers(model, INPUT_BLOCKS_PREFIX)
         ],
+        "middle_block": _get_block_tensors(model, MIDDLE_BLOCK_PREFIX),
     }
 
 
-def _get_input_block_tensors(
+def _get_block_tensors(
     model: safetensors.safe_open, prefix: str
 ) -> list[tuple[str, dict]]:
-    """Finds the tensors of a single input block. A block is a numbered list of
-    parts which are run in order, and each part is a convolution, a residual
-    block, a transformer or a downsampling convolution. Which one a part is
-    depends on the names of its tensors, not on its position in the block, and
-    each part is returned as its type and its tensors."""
+    """Finds the tensors of a single block, such as one of the input blocks or
+    the middle block. A block is a numbered list of parts which are run in
+    order, and each part is a convolution, a residual block, a transformer or a
+    downsampling convolution. Which one a part is depends on the names of its
+    tensors, not on its position in the block, and each part is returned as its
+    type and its tensors."""
 
     keys = model.keys()
     parts = []
@@ -209,25 +215,37 @@ def _input_blocks(
 
     skips = []
     for block in input_blocks:
-        for part_type, tensors in block:
-            if part_type == "conv":
-                x = convolution(
-                    tensors["weight"], tensors["bias"], x, padding=CONV_PADDING
-                )
-            elif part_type == "resnet":
-                x = _resnet_block(x, tensors, time_embedding)
-            elif part_type == "transformer":
-                x = _transformer(x, tensors, conditioning)
-            elif part_type == "downsample":
-                x = convolution(
-                    tensors["weight"],
-                    tensors["bias"],
-                    x,
-                    padding=DOWNSAMPLE_PADDING,
-                    stride=DOWNSAMPLE_STRIDE,
-                )
+        x = _block(x, block, time_embedding, conditioning)
         skips.append(x)
     return x, skips
+
+
+def _block(
+    x: torch.Tensor,
+    block: list[tuple[str, dict]],
+    time_embedding: torch.Tensor,
+    conditioning: torch.Tensor,
+) -> torch.Tensor:
+    """Runs the tensor through each part of a single block in order. Residual
+    blocks are given the time embedding, transformers are given the
+    conditioning, and convolutions need neither."""
+
+    for part_type, tensors in block:
+        if part_type == "conv":
+            x = convolution(tensors["weight"], tensors["bias"], x, padding=CONV_PADDING)
+        elif part_type == "resnet":
+            x = _resnet_block(x, tensors, time_embedding)
+        elif part_type == "transformer":
+            x = _transformer(x, tensors, conditioning)
+        elif part_type == "downsample":
+            x = convolution(
+                tensors["weight"],
+                tensors["bias"],
+                x,
+                padding=DOWNSAMPLE_PADDING,
+                stride=DOWNSAMPLE_STRIDE,
+            )
+    return x
 
 
 def _resnet_block(
