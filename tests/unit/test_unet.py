@@ -4,6 +4,7 @@ from unittest.mock import patch
 import torch
 
 from pydiffuse.unet import (
+    _attention,
     _feed_forward,
     _noise_to_t,
     _timestep_sinusoids,
@@ -46,6 +47,55 @@ class TimestepSinusoidsTests(TestCase):
                 sinusoids,
                 torch.tensor(
                     [-0.83907, 0.89420, 0.99977, -0.54402, 0.44767, 0.0215427]
+                ),
+            )
+        )
+
+
+class AttentionTests(TestCase):
+    @patch("pydiffuse.unet.linear")
+    def test_attention(self, mock_linear):
+        x = torch.tensor([[1.0], [2.0], [3.0]])
+        targets = torch.tensor([[4.0], [5.0]])
+        block = {
+            "to_q": {"weight": "q weight", "bias": "q bias"},
+            "to_k": {"weight": "k weight", "bias": "k bias"},
+            "to_v": {"weight": "v weight", "bias": "v bias"},
+            "to_out.0": {"weight": "out weight", "bias": "out bias"},
+        }
+        values = torch.arange(1.0, 17.0)
+        mock_linear.side_effect = [
+            torch.tensor(
+                [[1.0, 0.0, 0.0, 1.0] * 4, [0.0, 1.0, 1.0, 0.0] * 4, [0.0] * 16]
+            ),
+            torch.tensor([[1.0, 0.0] * 8, [0.0, 1.0] * 8]),
+            torch.stack([values, values + 100.0]),
+            torch.tensor([[10.0], [20.0], [30.0]]),
+        ]
+        result = _attention(x, targets, block)
+        self.assertTrue(torch.equal(result, torch.tensor([[10.0], [20.0], [30.0]])))
+        self.assertEqual(
+            [call[0][:2] for call in mock_linear.call_args_list],
+            [
+                ("q weight", "q bias"),
+                ("k weight", "k bias"),
+                ("v weight", "v bias"),
+                ("out weight", "out bias"),
+            ],
+        )
+        self.assertTrue(torch.equal(mock_linear.call_args_list[0][0][2], x))
+        self.assertTrue(torch.equal(mock_linear.call_args_list[1][0][2], targets))
+        self.assertTrue(torch.equal(mock_linear.call_args_list[2][0][2], targets))
+        self.assertTrue(
+            torch.allclose(
+                mock_linear.call_args_list[3][0][2],
+                torch.stack([values, values, values])
+                + torch.tensor(
+                    [
+                        [33.02385, 33.02385, 66.97615, 66.97615] * 4,
+                        [66.97615, 66.97615, 33.02385, 33.02385] * 4,
+                        [50.0] * 16,
+                    ]
                 ),
             )
         )
