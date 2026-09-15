@@ -5,6 +5,7 @@ import torch
 
 from pydiffuse.unet import (
     _attention,
+    _block,
     _feed_forward,
     _noise_to_t,
     _out_layers,
@@ -54,6 +55,90 @@ class TimestepSinusoidsTests(TestCase):
                     [-0.83907, 0.89420, 0.99977, -0.54402, 0.44767, 0.0215427]
                 ),
             )
+        )
+
+
+class BlockTests(TestCase):
+    @patch("pydiffuse.unet.convolution")
+    @patch("pydiffuse.unet._resnet_block")
+    @patch("pydiffuse.unet._transformer")
+    @patch("pydiffuse.unet._upsample")
+    def test_block(
+        self, mock_upsample, mock_transformer, mock_resnet, mock_convolution
+    ):
+        x = Mock(torch.Tensor)
+        time_embedding = Mock(torch.Tensor)
+        conditioning = Mock(torch.Tensor)
+        block = [
+            ("conv", {"weight": "conv weight", "bias": "conv bias"}),
+            ("resnet", {"name": "resnet tensors"}),
+            ("transformer", {"name": "transformer tensors"}),
+            ("downsample", {"weight": "downsample weight", "bias": "downsample bias"}),
+            ("upsample", {"name": "upsample tensors"}),
+        ]
+        mock_convolution.side_effect = ["conv output", "downsample output"]
+        result = _block(x, block, time_embedding, conditioning, (4, 6))
+        self.assertEqual(result, mock_upsample.return_value)
+        self.assertEqual(
+            [call[0] for call in mock_convolution.call_args_list],
+            [
+                ("conv weight", "conv bias", x),
+                ("downsample weight", "downsample bias", mock_transformer.return_value),
+            ],
+        )
+        self.assertEqual(
+            [call[1] for call in mock_convolution.call_args_list],
+            [{"padding": 1}, {"padding": 1, "stride": 2}],
+        )
+        mock_resnet.assert_called_once_with(
+            "conv output", {"name": "resnet tensors"}, time_embedding
+        )
+        mock_transformer.assert_called_once_with(
+            mock_resnet.return_value, {"name": "transformer tensors"}, conditioning
+        )
+        mock_upsample.assert_called_once_with(
+            "downsample output", {"name": "upsample tensors"}, (4, 6)
+        )
+
+    @patch("pydiffuse.unet.convolution")
+    @patch("pydiffuse.unet._resnet_block")
+    @patch("pydiffuse.unet._transformer")
+    @patch("pydiffuse.unet._upsample")
+    def test_block_without_upsample_size(
+        self, mock_upsample, mock_transformer, mock_resnet, mock_convolution
+    ):
+        x = Mock(torch.Tensor)
+        time_embedding = Mock(torch.Tensor)
+        conditioning = Mock(torch.Tensor)
+        block = [
+            ("conv", {"weight": "conv weight", "bias": "conv bias"}),
+            ("resnet", {"name": "resnet tensors"}),
+            ("transformer", {"name": "transformer tensors"}),
+            ("downsample", {"weight": "downsample weight", "bias": "downsample bias"}),
+            ("upsample", {"name": "upsample tensors"}),
+        ]
+        mock_convolution.side_effect = ["conv output", "downsample output"]
+        result = _block(x, block, time_embedding, conditioning)
+        self.assertEqual(result, mock_upsample.return_value)
+        self.assertEqual(
+            [call[0] for call in mock_convolution.call_args_list],
+            [
+                ("conv weight", "conv bias", x),
+                ("downsample weight", "downsample bias", mock_transformer.return_value),
+            ],
+        )
+        self.assertEqual(
+            [call[1] for call in mock_convolution.call_args_list],
+            [{"padding": 1}, {"padding": 1, "stride": 2}],
+        )
+        mock_resnet.assert_called_once_with(
+            "conv output", {"name": "resnet tensors"}, time_embedding
+        )
+        mock_transformer.assert_called_once_with(
+            mock_resnet.return_value, {"name": "transformer tensors"}, conditioning
+        )
+        mock_upsample.assert_called_once_with(
+            "downsample output", {"name": "upsample tensors"}, None
         )
 
 
@@ -258,7 +343,12 @@ class ResnetBlockTests(TestCase):
             torch.full((2, 2, 3), 31.0),
         ]
         mock_convolution.side_effect = [
-            torch.full((2, 2, 3), 12.0),
+            torch.tensor(
+                [
+                    [[12.0, 13.0, 14.0], [15.0, 16.0, 17.0]],
+                    [[18.0, 19.0, 20.0], [21.0, 22.0, 23.0]],
+                ]
+            ),
             torch.tensor(
                 [
                     [[100.0, 200.0, 300.0], [400.0, 500.0, 600.0]],
@@ -281,6 +371,41 @@ class ResnetBlockTests(TestCase):
             )
         )
         self.assertEqual(
+            [call[0][:2] for call in mock_norm.call_args_list],
+            [("in norm weight", "in norm bias"), ("out norm weight", "out norm bias")],
+        )
+        self.assertTrue(torch.equal(mock_norm.call_args_list[0][0][2], x))
+        self.assertTrue(
+            torch.equal(
+                mock_norm.call_args_list[1][0][2],
+                torch.tensor(
+                    [
+                        [[1012.0, 1013.0, 1014.0], [1015.0, 1016.0, 1017.0]],
+                        [[2018.0, 2019.0, 2020.0], [2021.0, 2022.0, 2023.0]],
+                    ]
+                ),
+            )
+        )
+        self.assertEqual(
+            [call[1] for call in mock_norm.call_args_list],
+            [{"groups": 32}, {"groups": 32}],
+        )
+        self.assertTrue(
+            torch.equal(mock_silu.call_args_list[0][0][0], torch.full((2, 2, 3), 10.0))
+        )
+        self.assertTrue(torch.equal(mock_silu.call_args_list[1][0][0], time_embedding))
+        self.assertTrue(
+            torch.equal(mock_silu.call_args_list[2][0][0], torch.full((2, 2, 3), 30.0))
+        )
+        self.assertEqual(
+            mock_linear.call_args_list[0][0][:2], ("emb weight", "emb bias")
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_linear.call_args_list[0][0][2], torch.tensor([1.0, 2.0, 3.0, 4.0])
+            )
+        )
+        self.assertEqual(
             [call[0][:2] for call in mock_convolution.call_args_list],
             [
                 ("in conv weight", "in conv bias"),
@@ -288,11 +413,21 @@ class ResnetBlockTests(TestCase):
                 ("skip weight", "skip bias"),
             ],
         )
-        self.assertTrue(torch.equal(mock_convolution.call_args_list[2][0][2], x))
+        self.assertTrue(
+            torch.equal(
+                mock_convolution.call_args_list[0][0][2], torch.full((2, 2, 3), 11.0)
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_convolution.call_args_list[1][0][2], torch.full((2, 2, 3), 31.0)
+            )
+        )
         self.assertEqual(
             [call[1] for call in mock_convolution.call_args_list],
             [{"padding": 1}, {"padding": 1}, {}],
         )
+        self.assertTrue(torch.equal(mock_convolution.call_args_list[2][0][2], x))
 
 
 class TransformerTests(TestCase):
