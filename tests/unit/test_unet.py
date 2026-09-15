@@ -8,6 +8,7 @@ from pydiffuse.unet import (
     _feed_forward,
     _noise_to_t,
     _out_layers,
+    _output_blocks,
     _resnet_block,
     _timestep_sinusoids,
     _transformer,
@@ -53,6 +54,53 @@ class TimestepSinusoidsTests(TestCase):
                     [-0.83907, 0.89420, 0.99977, -0.54402, 0.44767, 0.0215427]
                 ),
             )
+        )
+
+
+class OutputBlocksTests(TestCase):
+    @patch("pydiffuse.unet._block")
+    def test_output_blocks(self, mock_block):
+        x = torch.full((1, 2, 3), 1.0)
+        skips = [
+            torch.full((1, 4, 6), 10.0),
+            torch.full((1, 2, 3), 20.0),
+            torch.full((1, 2, 3), 30.0),
+        ]
+        output_blocks = [[("block 0", {})], [("block 1", {})], [("block 2", {})]]
+        time_embedding = Mock(torch.Tensor)
+        conditioning = Mock(torch.Tensor)
+        mock_block.side_effect = [
+            torch.full((1, 2, 3), 2.0),
+            torch.full((1, 4, 6), 3.0),
+            torch.full((1, 4, 6), 4.0),
+        ]
+        result = _output_blocks(x, skips, output_blocks, time_embedding, conditioning)
+        self.assertTrue(torch.equal(result, torch.full((1, 4, 6), 4.0)))
+        self.assertTrue(
+            torch.equal(
+                mock_block.call_args_list[0][0][0],
+                torch.tensor([[[1.0] * 3] * 2, [[30.0] * 3] * 2]),
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_block.call_args_list[1][0][0],
+                torch.tensor([[[2.0] * 3] * 2, [[20.0] * 3] * 2]),
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_block.call_args_list[2][0][0],
+                torch.tensor([[[3.0] * 6] * 4, [[10.0] * 6] * 4]),
+            )
+        )
+        self.assertEqual(
+            [call[0][1:] for call in mock_block.call_args_list],
+            [
+                (output_blocks[0], time_embedding, conditioning, (2, 3)),
+                (output_blocks[1], time_embedding, conditioning, (4, 6)),
+                (output_blocks[2], time_embedding, conditioning, None),
+            ],
         )
 
 
