@@ -46,16 +46,33 @@ class UnetPredictTestCase(UnetTestCase):
     def run_command(self, *args, **kwargs):
         return super().run_command("predict", *args, **kwargs)
 
-    def check_noise(self, noise):
+    def check_noise(self, noise, values):
         self.assertEqual(noise.shape, (4, 7, 9))
-        self.assertEqual(round(noise[0, 0, 0].item(), 3), 0.179)
-        self.assertEqual(round(noise[0, 0, 8].item(), 3), -0.032)
-        self.assertEqual(round(noise[0, 6, 0].item(), 3), 0.061)
-        self.assertEqual(round(noise[0, 6, 8].item(), 3), 0.115)
-        self.assertEqual(round(noise[3, 0, 0].item(), 3), -0.262)
-        self.assertEqual(round(noise[3, 0, 8].item(), 3), -0.432)
-        self.assertEqual(round(noise[3, 6, 0].item(), 3), -0.116)
-        self.assertEqual(round(noise[3, 6, 8].item(), 3), 0.042)
+        positions = [(c, h, w) for c in (0, 3) for h in (0, 6) for w in (0, 8)]
+        self.assertEqual(
+            [round(noise[position].item(), 3) for position in positions], values
+        )
+
+    def test_zero_noise(self):
+        # Run the command with a noise level of zero
+        result = self.run_command(
+            self.latent_path, "0", self.conditioning_path, self.model_path
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "noise.pt").exists())
+
+        # Prediction is correct
+        with open(self.test_dir / "noise.pt", "rb") as f:
+            noise = torch.load(f)
+        self.check_noise(
+            noise, [-0.117, 0.128, 0.053, 0.36, 0.314, -0.091, 0.159, -0.162]
+        )
 
     def test_half_noise(self):
         # Run the command with only the required arguments
@@ -74,4 +91,27 @@ class UnetPredictTestCase(UnetTestCase):
         # Prediction is correct
         with open(self.test_dir / "noise.pt", "rb") as f:
             noise = torch.load(f)
-        self.check_noise(noise)
+        self.check_noise(
+            noise, [-0.113, 0.119, 0.057, 0.377, 0.325, -0.096, 0.16, -0.156]
+        )
+
+    def test_full_noise(self):
+        # Run the command with a noise level of one
+        result = self.run_command(
+            self.latent_path, "1", self.conditioning_path, self.model_path
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "noise.pt").exists())
+
+        # Prediction is correct
+        with open(self.test_dir / "noise.pt", "rb") as f:
+            noise = torch.load(f)
+        self.check_noise(
+            noise, [-0.116, 0.129, 0.038, 0.368, 0.322, -0.097, 0.149, -0.138]
+        )
