@@ -21,6 +21,7 @@ RESNET_LAYERS = (
 TRANSFORMER_LAYERS = ("norm", "proj_in", "proj_out")
 TRANSFORMER_BLOCK_LAYERS = ("norm1", "norm2", "norm3", "ff.net.0.proj", "ff.net.2")
 ATTENTION_LAYERS = ("to_q", "to_k", "to_v", "to_out.0")
+OUT_LAYERS = ("0", "2")
 
 CONV_PADDING = 1
 DOWNSAMPLE_PADDING = 1
@@ -46,9 +47,10 @@ def unet(
         latent, model_tensors["input_blocks"], time_embedding, conditioning
     )
     x = _block(x, model_tensors["middle_block"], time_embedding, conditioning)
-    _output_blocks(
+    x = _output_blocks(
         x, skips, model_tensors["output_blocks"], time_embedding, conditioning
     )
+    return _out_layers(x, model_tensors["out"])
 
 
 def _get_unet_tensors(model: safetensors.safe_open) -> dict:
@@ -68,6 +70,7 @@ def _get_unet_tensors(model: safetensors.safe_open) -> dict:
             _get_block_tensors(model, f"{OUTPUT_BLOCKS_PREFIX}.{index}")
             for index in _get_numbers(model, OUTPUT_BLOCKS_PREFIX)
         ],
+        "out": _get_layers(model, f"{MODEL_PREFIX}.out", OUT_LAYERS),
     }
 
 
@@ -286,6 +289,17 @@ def _output_blocks(
         x = torch.cat([x, skips.pop()])
         upsample_size = (skips[-1].shape[1], skips[-1].shape[2]) if skips else None
         x = _block(x, block, time_embedding, conditioning, upsample_size)
+    return x
+
+
+def _out_layers(x: torch.Tensor, out: dict) -> torch.Tensor:
+    """Runs the tensor through the end of the UNet, normalising and activating
+    it a final time before a convolution reduces its channels to those of the
+    latent. The result is the UNet's prediction of the noise in the latent."""
+
+    x = group_norm(out["0"]["weight"], out["0"]["bias"], x, groups=NORM_GROUPS)
+    x = silu(x)
+    x = convolution(out["2"]["weight"], out["2"]["bias"], x, padding=CONV_PADDING)
     return x
 
 
