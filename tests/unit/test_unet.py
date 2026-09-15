@@ -4,6 +4,7 @@ from unittest.mock import patch
 import torch
 
 from pydiffuse.unet import (
+    _feed_forward,
     _noise_to_t,
     _timestep_sinusoids,
     _upsample,
@@ -46,6 +47,45 @@ class TimestepSinusoidsTests(TestCase):
                 torch.tensor(
                     [-0.83907, 0.89420, 0.99977, -0.54402, 0.44767, 0.0215427]
                 ),
+            )
+        )
+
+
+class FeedForwardTests(TestCase):
+    @patch("pydiffuse.unet.gelu")
+    @patch("pydiffuse.unet.linear")
+    def test_feed_forward(self, mock_linear, mock_gelu):
+        x = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        block = {
+            "ff.net.0.proj": {"weight": "proj weight", "bias": "proj bias"},
+            "ff.net.2": {"weight": "out weight", "bias": "out bias"},
+        }
+        mock_linear.side_effect = [
+            torch.tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]),
+            torch.tensor([[100.0, 200.0], [300.0, 400.0]]),
+        ]
+        mock_gelu.return_value = torch.tensor([[10.0, 20.0], [30.0, 40.0]])
+        result = _feed_forward(x, block)
+        self.assertTrue(
+            torch.equal(result, torch.tensor([[100.0, 200.0], [300.0, 400.0]]))
+        )
+        self.assertEqual(
+            mock_linear.call_args_list[0][0][:2], ("proj weight", "proj bias")
+        )
+        self.assertTrue(torch.equal(mock_linear.call_args_list[0][0][2], x))
+        self.assertTrue(
+            torch.equal(
+                mock_gelu.call_args_list[0][0][0],
+                torch.tensor([[3.0, 4.0], [7.0, 8.0]]),
+            )
+        )
+        self.assertEqual(
+            mock_linear.call_args_list[1][0][:2], ("out weight", "out bias")
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_linear.call_args_list[1][0][2],
+                torch.tensor([[10.0, 40.0], [150.0, 240.0]]),
             )
         )
 
