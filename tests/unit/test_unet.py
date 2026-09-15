@@ -1,5 +1,5 @@
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import torch
 
@@ -7,6 +7,7 @@ from pydiffuse.unet import (
     _attention,
     _feed_forward,
     _noise_to_t,
+    _out_layers,
     _resnet_block,
     _timestep_sinusoids,
     _transformer,
@@ -52,6 +53,27 @@ class TimestepSinusoidsTests(TestCase):
                     [-0.83907, 0.89420, 0.99977, -0.54402, 0.44767, 0.0215427]
                 ),
             )
+        )
+
+
+class OutLayersTests(TestCase):
+    @patch("pydiffuse.unet.group_norm")
+    @patch("pydiffuse.unet.silu")
+    @patch("pydiffuse.unet.convolution")
+    def test_out_layers(self, mock_convolution, mock_silu, mock_group_norm):
+        x = Mock(torch.Tensor)
+        out = {
+            "0": {"weight": "norm weight", "bias": "norm bias"},
+            "2": {"weight": "conv weight", "bias": "conv bias"},
+        }
+        result = _out_layers(x, out)
+        self.assertEqual(result, mock_convolution.return_value)
+        mock_group_norm.assert_called_once_with(
+            "norm weight", "norm bias", x, groups=32
+        )
+        mock_silu.assert_called_once_with(mock_group_norm.return_value)
+        mock_convolution.assert_called_once_with(
+            "conv weight", "conv bias", mock_silu.return_value, padding=1
         )
 
 
