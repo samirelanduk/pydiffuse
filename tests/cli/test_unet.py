@@ -32,9 +32,9 @@ class UnetPredictTestCase(UnetTestCase):
     def setUp(self):
         super().setUp()
         self.latent_path = self.create_latent()
-        self.conditioning_path = (
-            Path(__file__).parent / "data" / "positive-conditioning.pt"
-        )
+        data_path = Path(__file__).parent / "data"
+        self.multi_chunk_conditioning_path = data_path / "positive-conditioning.pt"
+        self.single_chunk_conditioning_path = data_path / "negative-conditioning.pt"
         self.model_path = Path(__file__).parent / "models" / "unet_model.safetensors"
 
     def create_latent(self):
@@ -56,7 +56,7 @@ class UnetPredictTestCase(UnetTestCase):
     def test_zero_noise(self):
         # Run the command with a noise level of zero
         result = self.run_command(
-            self.latent_path, "0", self.conditioning_path, self.model_path
+            self.latent_path, "0", self.multi_chunk_conditioning_path, self.model_path
         )
 
         # Process ran successfully
@@ -77,7 +77,7 @@ class UnetPredictTestCase(UnetTestCase):
     def test_half_noise(self):
         # Run the command with only the required arguments
         result = self.run_command(
-            self.latent_path, "0.5", self.conditioning_path, self.model_path
+            self.latent_path, "0.5", self.multi_chunk_conditioning_path, self.model_path
         )
 
         # Process ran successfully
@@ -98,7 +98,7 @@ class UnetPredictTestCase(UnetTestCase):
     def test_full_noise(self):
         # Run the command with a noise level of one
         result = self.run_command(
-            self.latent_path, "1", self.conditioning_path, self.model_path
+            self.latent_path, "1", self.multi_chunk_conditioning_path, self.model_path
         )
 
         # Process ran successfully
@@ -114,4 +114,28 @@ class UnetPredictTestCase(UnetTestCase):
             noise = torch.load(f)
         self.check_noise(
             noise, [-0.116, 0.129, 0.038, 0.368, 0.322, -0.097, 0.149, -0.138]
+        )
+
+    def test_single_chunk_conditioning(self):
+        # Run the command with a conditioning of a single chunk
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.single_chunk_conditioning_path,
+            self.model_path,
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "noise.pt").exists())
+
+        # Prediction is correct
+        with open(self.test_dir / "noise.pt", "rb") as f:
+            noise = torch.load(f)
+        self.check_noise(
+            noise, [-0.109, 0.119, 0.046, 0.36, 0.32, -0.098, 0.152, -0.153]
         )
