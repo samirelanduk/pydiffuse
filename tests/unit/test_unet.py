@@ -7,6 +7,7 @@ from pydiffuse.unet import (
     _attention,
     _block,
     _feed_forward,
+    _input_blocks,
     _noise_to_t,
     _out_layers,
     _output_blocks,
@@ -55,6 +56,27 @@ class TimestepSinusoidsTests(TestCase):
                     [-0.83907, 0.89420, 0.99977, -0.54402, 0.44767, 0.0215427]
                 ),
             )
+        )
+
+
+class InputBlocksTests(TestCase):
+    @patch("pydiffuse.unet._block")
+    def test_input_blocks(self, mock_block):
+        x = Mock(torch.Tensor)
+        time_embedding = Mock(torch.Tensor)
+        conditioning = Mock(torch.Tensor)
+        input_blocks = [[("block 0", {})], [("block 1", {})], [("block 2", {})]]
+        mock_block.side_effect = ["block 0 output", "block 1 output", "block 2 output"]
+        result, skips = _input_blocks(x, input_blocks, time_embedding, conditioning)
+        self.assertEqual(result, "block 2 output")
+        self.assertEqual(skips, ["block 0 output", "block 1 output", "block 2 output"])
+        self.assertEqual(
+            [call[0] for call in mock_block.call_args_list],
+            [
+                (x, input_blocks[0], time_embedding, conditioning),
+                ("block 0 output", input_blocks[1], time_embedding, conditioning),
+                ("block 1 output", input_blocks[2], time_embedding, conditioning),
+            ],
         )
 
 
