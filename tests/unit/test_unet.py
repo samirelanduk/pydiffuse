@@ -8,6 +8,7 @@ from pydiffuse.unet import (
     _feed_forward,
     _noise_to_t,
     _timestep_sinusoids,
+    _transformer,
     _transformer_block,
     _upsample,
 )
@@ -48,6 +49,118 @@ class TimestepSinusoidsTests(TestCase):
                 sinusoids,
                 torch.tensor(
                     [-0.83907, 0.89420, 0.99977, -0.54402, 0.44767, 0.0215427]
+                ),
+            )
+        )
+
+
+class TransformerTests(TestCase):
+    @patch("pydiffuse.unet.group_norm")
+    @patch("pydiffuse.unet.convolution")
+    @patch("pydiffuse.unet._transformer_block")
+    def test_transformer(self, mock_transformer_block, mock_convolution, mock_norm):
+        x = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[0.1, 0.2, 0.3]] * 2])
+        conditioning = torch.tensor([[13.0, 14.0]])
+        block = {
+            "norm": {"weight": "norm weight", "bias": "norm bias"},
+            "proj_in": {"weight": "proj_in weight", "bias": "proj_in bias"},
+            "proj_out": {"weight": "proj_out weight", "bias": "proj_out bias"},
+            "transformer_blocks": ["transformer block 1", "transformer block 2"],
+        }
+        mock_norm.return_value = torch.tensor([[[9.0] * 3] * 2] * 2)
+        mock_convolution.side_effect = [
+            torch.tensor(
+                [
+                    [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                    [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+                    [[13.0, 14.0, 15.0], [16.0, 17.0, 18.0]],
+                ]
+            ),
+            torch.tensor(
+                [
+                    [[100.0, 200.0, 300.0], [400.0, 500.0, 600.0]],
+                    [[700.0, 800.0, 900.0], [1000.0, 1100.0, 1200.0]],
+                ]
+            ),
+        ]
+        mock_transformer_block.side_effect = [
+            torch.tensor([[0.5, 0.5, 0.5]] * 6),
+            torch.tensor(
+                [
+                    [10.0, 70.0, 130.0],
+                    [20.0, 80.0, 140.0],
+                    [30.0, 90.0, 150.0],
+                    [40.0, 100.0, 160.0],
+                    [50.0, 110.0, 170.0],
+                    [60.0, 120.0, 180.0],
+                ]
+            ),
+        ]
+        result = _transformer(x, block, conditioning)
+        self.assertTrue(
+            torch.allclose(
+                result,
+                torch.tensor(
+                    [
+                        [[101.0, 202.0, 303.0], [404.0, 505.0, 606.0]],
+                        [[700.1, 800.2, 900.3], [1000.1, 1100.2, 1200.3]],
+                    ]
+                ),
+            )
+        )
+        self.assertEqual(
+            mock_norm.call_args_list[0][0][:2], ("norm weight", "norm bias")
+        )
+        self.assertTrue(torch.equal(mock_norm.call_args_list[0][0][2], x))
+        self.assertEqual(mock_norm.call_args_list[0][1], {"groups": 32})
+        self.assertEqual(
+            [call[0][:2] for call in mock_convolution.call_args_list],
+            [("proj_in weight", "proj_in bias"), ("proj_out weight", "proj_out bias")],
+        )
+        self.assertEqual(
+            [call[1] for call in mock_convolution.call_args_list], [{}, {}]
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_convolution.call_args_list[0][0][2], mock_norm.return_value
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_transformer_block.call_args_list[0][0][0],
+                torch.tensor(
+                    [
+                        [1.0, 7.0, 13.0],
+                        [2.0, 8.0, 14.0],
+                        [3.0, 9.0, 15.0],
+                        [4.0, 10.0, 16.0],
+                        [5.0, 11.0, 17.0],
+                        [6.0, 12.0, 18.0],
+                    ]
+                ),
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_transformer_block.call_args_list[1][0][0],
+                torch.tensor([[0.5, 0.5, 0.5]] * 6),
+            )
+        )
+        self.assertEqual(
+            [call[0][1] for call in mock_transformer_block.call_args_list],
+            ["transformer block 1", "transformer block 2"],
+        )
+        for call in mock_transformer_block.call_args_list:
+            self.assertTrue(torch.equal(call[0][2], conditioning))
+        self.assertTrue(
+            torch.equal(
+                mock_convolution.call_args_list[1][0][2],
+                torch.tensor(
+                    [
+                        [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]],
+                        [[70.0, 80.0, 90.0], [100.0, 110.0, 120.0]],
+                        [[130.0, 140.0, 150.0], [160.0, 170.0, 180.0]],
+                    ]
                 ),
             )
         )
