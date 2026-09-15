@@ -7,6 +7,7 @@ from pydiffuse.unet import (
     _attention,
     _feed_forward,
     _noise_to_t,
+    _resnet_block,
     _timestep_sinusoids,
     _transformer,
     _transformer_block,
@@ -51,6 +52,176 @@ class TimestepSinusoidsTests(TestCase):
                     [-0.83907, 0.89420, 0.99977, -0.54402, 0.44767, 0.0215427]
                 ),
             )
+        )
+
+
+class ResnetBlockTests(TestCase):
+    @patch("pydiffuse.unet.group_norm")
+    @patch("pydiffuse.unet.silu")
+    @patch("pydiffuse.unet.convolution")
+    @patch("pydiffuse.unet.linear")
+    def test_resnet_block(self, mock_linear, mock_convolution, mock_silu, mock_norm):
+        x = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]] * 2)
+        time_embedding = torch.tensor([0.1, 0.2, 0.3, 0.4])
+        block = {
+            "in_layers.0": {"weight": "in norm weight", "bias": "in norm bias"},
+            "in_layers.2": {"weight": "in conv weight", "bias": "in conv bias"},
+            "emb_layers.1": {"weight": "emb weight", "bias": "emb bias"},
+            "out_layers.0": {"weight": "out norm weight", "bias": "out norm bias"},
+            "out_layers.3": {"weight": "out conv weight", "bias": "out conv bias"},
+            "skip_connection": None,
+        }
+        mock_norm.side_effect = [
+            torch.full((2, 2, 3), 10.0),
+            torch.full((2, 2, 3), 30.0),
+        ]
+        mock_silu.side_effect = [
+            torch.full((2, 2, 3), 11.0),
+            torch.tensor([1.0, 2.0, 3.0, 4.0]),
+            torch.full((2, 2, 3), 31.0),
+        ]
+        mock_convolution.side_effect = [
+            torch.tensor(
+                [
+                    [[12.0, 13.0, 14.0], [15.0, 16.0, 17.0]],
+                    [[18.0, 19.0, 20.0], [21.0, 22.0, 23.0]],
+                ]
+            ),
+            torch.tensor(
+                [
+                    [[100.0, 200.0, 300.0], [400.0, 500.0, 600.0]],
+                    [[700.0, 800.0, 900.0], [1000.0, 1100.0, 1200.0]],
+                ]
+            ),
+        ]
+        mock_linear.return_value = torch.tensor([1000.0, 2000.0])
+        result = _resnet_block(x, block, time_embedding)
+        self.assertTrue(
+            torch.equal(
+                result,
+                torch.tensor(
+                    [
+                        [[101.0, 202.0, 303.0], [404.0, 505.0, 606.0]],
+                        [[701.0, 802.0, 903.0], [1004.0, 1105.0, 1206.0]],
+                    ]
+                ),
+            )
+        )
+        self.assertEqual(
+            [call[0][:2] for call in mock_norm.call_args_list],
+            [("in norm weight", "in norm bias"), ("out norm weight", "out norm bias")],
+        )
+        self.assertTrue(torch.equal(mock_norm.call_args_list[0][0][2], x))
+        self.assertTrue(
+            torch.equal(
+                mock_norm.call_args_list[1][0][2],
+                torch.tensor(
+                    [
+                        [[1012.0, 1013.0, 1014.0], [1015.0, 1016.0, 1017.0]],
+                        [[2018.0, 2019.0, 2020.0], [2021.0, 2022.0, 2023.0]],
+                    ]
+                ),
+            )
+        )
+        self.assertEqual(
+            [call[1] for call in mock_norm.call_args_list],
+            [{"groups": 32}, {"groups": 32}],
+        )
+        self.assertTrue(
+            torch.equal(mock_silu.call_args_list[0][0][0], torch.full((2, 2, 3), 10.0))
+        )
+        self.assertTrue(torch.equal(mock_silu.call_args_list[1][0][0], time_embedding))
+        self.assertTrue(
+            torch.equal(mock_silu.call_args_list[2][0][0], torch.full((2, 2, 3), 30.0))
+        )
+        self.assertEqual(
+            mock_linear.call_args_list[0][0][:2], ("emb weight", "emb bias")
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_linear.call_args_list[0][0][2], torch.tensor([1.0, 2.0, 3.0, 4.0])
+            )
+        )
+        self.assertEqual(
+            [call[0][:2] for call in mock_convolution.call_args_list],
+            [("in conv weight", "in conv bias"), ("out conv weight", "out conv bias")],
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_convolution.call_args_list[0][0][2], torch.full((2, 2, 3), 11.0)
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_convolution.call_args_list[1][0][2], torch.full((2, 2, 3), 31.0)
+            )
+        )
+        self.assertEqual(
+            [call[1] for call in mock_convolution.call_args_list],
+            [{"padding": 1}, {"padding": 1}],
+        )
+
+    @patch("pydiffuse.unet.group_norm")
+    @patch("pydiffuse.unet.silu")
+    @patch("pydiffuse.unet.convolution")
+    @patch("pydiffuse.unet.linear")
+    def test_resnet_block_with_skip_connection(
+        self, mock_linear, mock_convolution, mock_silu, mock_norm
+    ):
+        x = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]] * 2)
+        time_embedding = torch.tensor([0.1, 0.2, 0.3, 0.4])
+        block = {
+            "in_layers.0": {"weight": "in norm weight", "bias": "in norm bias"},
+            "in_layers.2": {"weight": "in conv weight", "bias": "in conv bias"},
+            "emb_layers.1": {"weight": "emb weight", "bias": "emb bias"},
+            "out_layers.0": {"weight": "out norm weight", "bias": "out norm bias"},
+            "out_layers.3": {"weight": "out conv weight", "bias": "out conv bias"},
+            "skip_connection": {"weight": "skip weight", "bias": "skip bias"},
+        }
+        mock_norm.side_effect = [
+            torch.full((2, 2, 3), 10.0),
+            torch.full((2, 2, 3), 30.0),
+        ]
+        mock_silu.side_effect = [
+            torch.full((2, 2, 3), 11.0),
+            torch.tensor([1.0, 2.0, 3.0, 4.0]),
+            torch.full((2, 2, 3), 31.0),
+        ]
+        mock_convolution.side_effect = [
+            torch.full((2, 2, 3), 12.0),
+            torch.tensor(
+                [
+                    [[100.0, 200.0, 300.0], [400.0, 500.0, 600.0]],
+                    [[700.0, 800.0, 900.0], [1000.0, 1100.0, 1200.0]],
+                ]
+            ),
+            torch.full((2, 2, 3), 5.0),
+        ]
+        mock_linear.return_value = torch.tensor([1000.0, 2000.0])
+        result = _resnet_block(x, block, time_embedding)
+        self.assertTrue(
+            torch.equal(
+                result,
+                torch.tensor(
+                    [
+                        [[105.0, 205.0, 305.0], [405.0, 505.0, 605.0]],
+                        [[705.0, 805.0, 905.0], [1005.0, 1105.0, 1205.0]],
+                    ]
+                ),
+            )
+        )
+        self.assertEqual(
+            [call[0][:2] for call in mock_convolution.call_args_list],
+            [
+                ("in conv weight", "in conv bias"),
+                ("out conv weight", "out conv bias"),
+                ("skip weight", "skip bias"),
+            ],
+        )
+        self.assertTrue(torch.equal(mock_convolution.call_args_list[2][0][2], x))
+        self.assertEqual(
+            [call[1] for call in mock_convolution.call_args_list],
+            [{"padding": 1}, {"padding": 1}, {}],
         )
 
 
