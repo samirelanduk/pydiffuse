@@ -6,6 +6,7 @@ import torch
 from pydiffuse.unet import (
     _attention,
     _block,
+    _combine_chunks,
     _feed_forward,
     _input_blocks,
     _noise_to_t,
@@ -57,6 +58,23 @@ class TimestepSinusoidsTests(TestCase):
                 ),
             )
         )
+
+
+class CombineChunksTests(TestCase):
+    def test_combine_chunks(self):
+        conditioning = torch.tensor(
+            [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]]]
+        )
+        combined = _combine_chunks(conditioning)
+        self.assertEqual(
+            combined.tolist(),
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+        )
+
+    def test_combine_single_chunk(self):
+        conditioning = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]])
+        combined = _combine_chunks(conditioning)
+        self.assertEqual(combined.tolist(), [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
 
 
 class InputBlocksTests(TestCase):
