@@ -38,10 +38,7 @@ def unet(
     model: safetensors.safe_open,
 ) -> torch.Tensor:
     model_tensors = _get_unet_tensors(model)
-    t = _noise_to_t(noise_level)
-    sinusoid_width = model_tensors["time_embed"][0]["weight"].shape[1]
-    sinusoids = _timestep_sinusoids(t, sinusoid_width)
-    time_embedding = _time_embed(sinusoids, model_tensors["time_embed"])
+    time_embedding = _noise_level_to_embedding(noise_level, model_tensors)
     conditioning = _combine_chunks(conditioning)
     x, skips = _input_blocks(
         latent, model_tensors["input_blocks"], time_embedding, conditioning
@@ -74,6 +71,38 @@ def _get_unet_tensors(model: safetensors.safe_open) -> dict:
     }
 
 
+def _get_layer(model: safetensors.safe_open, prefix: str) -> dict | None:
+    """Gets the weight and bias of a single layer, or None if the model has no
+    such layer. Some layers have a weight but no bias, in which case the bias is
+    None."""
+
+    keys = model.keys()
+    if f"{prefix}.weight" not in keys:
+        return None
+    return {
+        "weight": model.get_tensor(f"{prefix}.weight").float(),
+        "bias": (
+            model.get_tensor(f"{prefix}.bias").float()
+            if f"{prefix}.bias" in keys
+            else None
+        ),
+    }
+
+
+def _get_numbers(model: safetensors.safe_open, prefix: str) -> list[int]:
+    """Gets a list of the numbers that the model's keys use directly under a
+    prefix, such as the layers within the time embedding."""
+
+    numbers = set()
+    keys = model.keys()
+    for key in keys:
+        number_match = re.search(rf"^{prefix}\.(\d+)\.", key)
+        if not number_match:
+            continue
+        numbers.add(int(number_match.group(1)))
+    return sorted(numbers)
+
+
 def _get_block_tensors(
     model: safetensors.safe_open, prefix: str
 ) -> list[tuple[str, dict]]:
@@ -104,6 +133,14 @@ def _get_block_tensors(
     return parts
 
 
+def _get_layers(
+    model: safetensors.safe_open, prefix: str, names: tuple[str, ...]
+) -> dict:
+    """Gets the weight and bias of each of the given layers under a prefix."""
+
+    return {name: _get_layer(model, f"{prefix}.{name}") for name in names}
+
+
 def _get_transformer_tensors(model: safetensors.safe_open, prefix: str) -> dict:
     """Finds the tensors of a transformer, including every transformer block
     inside it."""
@@ -122,44 +159,11 @@ def _get_transformer_tensors(model: safetensors.safe_open, prefix: str) -> dict:
     return tensors
 
 
-def _get_numbers(model: safetensors.safe_open, prefix: str) -> list[int]:
-    """Gets a list of the numbers that the model's keys use directly under a
-    prefix, such as the layers within the time embedding."""
-
-    numbers = set()
-    keys = model.keys()
-    for key in keys:
-        number_match = re.search(rf"^{prefix}\.(\d+)\.", key)
-        if not number_match:
-            continue
-        numbers.add(int(number_match.group(1)))
-    return sorted(numbers)
-
-
-def _get_layers(
-    model: safetensors.safe_open, prefix: str, names: tuple[str, ...]
-) -> dict:
-    """Gets the weight and bias of each of the given layers under a prefix."""
-
-    return {name: _get_layer(model, f"{prefix}.{name}") for name in names}
-
-
-def _get_layer(model: safetensors.safe_open, prefix: str) -> dict | None:
-    """Gets the weight and bias of a single layer, or None if the model has no
-    such layer. Some layers have a weight but no bias, in which case the bias is
-    None."""
-
-    keys = model.keys()
-    if f"{prefix}.weight" not in keys:
-        return None
-    return {
-        "weight": model.get_tensor(f"{prefix}.weight").float(),
-        "bias": (
-            model.get_tensor(f"{prefix}.bias").float()
-            if f"{prefix}.bias" in keys
-            else None
-        ),
-    }
+def _noise_level_to_embedding(noise_level: float, model_tensors: dict) -> torch.Tensor:
+    t = _noise_to_t(noise_level)
+    sinusoid_width = model_tensors["time_embed"][0]["weight"].shape[1]
+    sinusoids = _timestep_sinusoids(t, sinusoid_width)
+    return _time_embed(sinusoids, model_tensors["time_embed"])
 
 
 def _noise_to_t(noise_level) -> int:
