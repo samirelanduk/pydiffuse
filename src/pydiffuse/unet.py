@@ -384,9 +384,8 @@ def _transformer(
 def _transformer_block(
     x: torch.Tensor, block: dict, conditioning: torch.Tensor
 ) -> torch.Tensor:
-    """Applies a transformer block to a sequence of image position vectors. The
-    positions first attend to each other, then to the conditioning's token
-    vectors - which is how the prompt influences the image - and are then each
+    """Applies a transformer block to a sequence of vectors. The vectors first
+    attend to each other, then to the conditioning's vectors, and are then each
     run through a feed forward network. Each of the three stages is normalised
     first and added back onto the sequence."""
 

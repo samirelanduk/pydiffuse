@@ -8,6 +8,7 @@ from pydiffuse.unet import (
     _feed_forward,
     _noise_to_t,
     _timestep_sinusoids,
+    _transformer_block,
     _upsample,
 )
 
@@ -50,6 +51,80 @@ class TimestepSinusoidsTests(TestCase):
                 ),
             )
         )
+
+
+class TransformerBlockTests(TestCase):
+    @patch("pydiffuse.unet.layer_norm")
+    @patch("pydiffuse.unet._attention")
+    @patch("pydiffuse.unet._feed_forward")
+    def test_transformer_block(self, mock_feed_forward, mock_attention, mock_norm):
+        x = torch.tensor([[1.0, 2.0]])
+        conditioning = torch.tensor([[3.0, 4.0], [5.0, 6.0]])
+        block = {
+            "norm1": {"weight": "norm1 weight", "bias": "norm1 bias"},
+            "norm2": {"weight": "norm2 weight", "bias": "norm2 bias"},
+            "norm3": {"weight": "norm3 weight", "bias": "norm3 bias"},
+            "attn1": "attn1",
+            "attn2": "attn2",
+        }
+        mock_norm.side_effect = [
+            torch.tensor([[10.0, 20.0]]),
+            torch.tensor([[30.0, 40.0]]),
+            torch.tensor([[50.0, 60.0]]),
+        ]
+        mock_attention.side_effect = [
+            torch.tensor([[100.0, 200.0]]),
+            torch.tensor([[1000.0, 2000.0]]),
+        ]
+        mock_feed_forward.return_value = torch.tensor([[10000.0, 20000.0]])
+        result = _transformer_block(x, block, conditioning)
+        self.assertTrue(torch.equal(result, torch.tensor([[11101.0, 22202.0]])))
+        self.assertEqual(
+            [call[0][:2] for call in mock_norm.call_args_list],
+            [
+                ("norm1 weight", "norm1 bias"),
+                ("norm2 weight", "norm2 bias"),
+                ("norm3 weight", "norm3 bias"),
+            ],
+        )
+        self.assertTrue(torch.equal(mock_norm.call_args_list[0][0][2], x))
+        self.assertTrue(
+            torch.equal(
+                mock_norm.call_args_list[1][0][2], torch.tensor([[101.0, 202.0]])
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_norm.call_args_list[2][0][2], torch.tensor([[1101.0, 2202.0]])
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_attention.call_args_list[0][0][0], torch.tensor([[10.0, 20.0]])
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                mock_attention.call_args_list[0][0][1], torch.tensor([[10.0, 20.0]])
+            )
+        )
+        self.assertEqual(mock_attention.call_args_list[0][0][2], "attn1")
+        self.assertTrue(
+            torch.equal(
+                mock_attention.call_args_list[1][0][0], torch.tensor([[30.0, 40.0]])
+            )
+        )
+        self.assertTrue(
+            torch.equal(mock_attention.call_args_list[1][0][1], conditioning)
+        )
+        self.assertEqual(mock_attention.call_args_list[1][0][2], "attn2")
+        self.assertTrue(
+            torch.equal(
+                mock_feed_forward.call_args_list[0][0][0],
+                torch.tensor([[50.0, 60.0]]),
+            )
+        )
+        self.assertEqual(mock_feed_forward.call_args_list[0][0][1], block)
 
 
 class AttentionTests(TestCase):
