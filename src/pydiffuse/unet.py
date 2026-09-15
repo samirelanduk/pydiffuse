@@ -433,7 +433,7 @@ def _feed_forward(x: torch.Tensor, block: dict) -> torch.Tensor:
 
 
 def _upsample(
-    x: torch.Tensor, upsample: dict, size: tuple[int, int] | None = None
+    x: torch.Tensor, conv: dict, size: tuple[int, int] | None = None
 ) -> torch.Tensor:
     """Doubles the height and width of the tensor by repeating each value into a
     2x2 square of its own, then runs a convolution over the result to smooth out
@@ -446,5 +446,5 @@ def _upsample(
     x = x.repeat_interleave(UPSAMPLE_SCALE, dim=2)
     if size is not None:
         x = x[:, : size[0], : size[1]]
-    x = convolution(upsample["weight"], upsample["bias"], x, padding=CONV_PADDING)
+    x = convolution(conv["weight"], conv["bias"], x, padding=CONV_PADDING)
     return x

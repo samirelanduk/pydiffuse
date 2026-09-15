@@ -1,10 +1,12 @@
 from unittest import TestCase
+from unittest.mock import patch
 
 import torch
 
 from pydiffuse.unet import (
     _noise_to_t,
     _timestep_sinusoids,
+    _upsample,
 )
 
 
@@ -46,3 +48,50 @@ class TimestepSinusoidsTests(TestCase):
                 ),
             )
         )
+
+
+class UpsampleTests(TestCase):
+    @patch("pydiffuse.unet.convolution")
+    def test_upsample(self, mock_convolution):
+        x = torch.tensor([[[1, 2, 3, 4], [5, 6, 7, 8]]])
+        conv = {"weight": "conv weight", "bias": "conv bias"}
+        result = _upsample(x, conv)
+        self.assertEqual(result, mock_convolution.return_value)
+        self.assertEqual(
+            mock_convolution.call_args_list[0][0][:2],
+            ("conv weight", "conv bias"),
+        )
+        self.assertEqual(
+            mock_convolution.call_args_list[0][0][2].tolist(),
+            [
+                [
+                    [1, 1, 2, 2, 3, 3, 4, 4],
+                    [1, 1, 2, 2, 3, 3, 4, 4],
+                    [5, 5, 6, 6, 7, 7, 8, 8],
+                    [5, 5, 6, 6, 7, 7, 8, 8],
+                ]
+            ],
+        )
+        self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})
+
+    @patch("pydiffuse.unet.convolution")
+    def test_upsample_to_size(self, mock_convolution):
+        x = torch.tensor([[[1, 2, 3, 4], [5, 6, 7, 8]]])
+        conv = {"weight": "conv weight", "bias": "conv bias"}
+        result = _upsample(x, conv, (3, 7))
+        self.assertEqual(result, mock_convolution.return_value)
+        self.assertEqual(
+            mock_convolution.call_args_list[0][0][:2],
+            ("conv weight", "conv bias"),
+        )
+        self.assertEqual(
+            mock_convolution.call_args_list[0][0][2].tolist(),
+            [
+                [
+                    [1, 1, 2, 2, 3, 3, 4],
+                    [1, 1, 2, 2, 3, 3, 4],
+                    [5, 5, 6, 6, 7, 7, 8],
+                ]
+            ],
+        )
+        self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})
