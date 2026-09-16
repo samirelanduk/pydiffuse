@@ -1,16 +1,48 @@
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import safetensors
 import torch
 
 from pydiffuse.noise import (
     _noise_level_to_ratio,
     _ratio_to_noise_level,
     _scaling_factors,
+    create_noise,
     exponential_schedule,
     karras_schedule,
     noise_tensor,
 )
+
+
+class CreateNoiseTest(TestCase):
+    @patch("pydiffuse.noise.get_downscale_ratio")
+    @patch("pydiffuse.noise.get_latent_channels")
+    @patch("torch.randn")
+    def test_can_create_noise(self, mock_randn, mock_channels, mock_ratio):
+        mock_ratio.return_value = 4
+        mock_channels.return_value = 6
+        model = Mock(safetensors.safe_open)
+        noise = create_noise(64, 40, model)
+        self.assertEqual(noise, mock_randn.return_value)
+        mock_ratio.assert_called_once_with(model)
+        mock_channels.assert_called_once_with(model)
+        mock_randn.assert_called_once_with(6, 10, 16)
+
+    @patch("pydiffuse.noise.get_downscale_ratio")
+    @patch("pydiffuse.noise.get_latent_channels")
+    @patch("torch.randn")
+    def test_can_create_noise_with_uneven_size(
+        self, mock_randn, mock_channels, mock_ratio
+    ):
+        mock_ratio.return_value = 4
+        mock_channels.return_value = 6
+        model = Mock(safetensors.safe_open)
+        noise = create_noise(67, 43, model)
+        self.assertEqual(noise, mock_randn.return_value)
+        mock_ratio.assert_called_once_with(model)
+        mock_channels.assert_called_once_with(model)
+        mock_randn.assert_called_once_with(6, 10, 16)
 
 
 class NoiseTensorTest(TestCase):

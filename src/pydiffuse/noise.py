@@ -1,12 +1,27 @@
 import math
 
+import safetensors
 import torch
+
+from .vae import get_downscale_ratio, get_latent_channels
 
 # The noise levels at the ends of the schedule Stable Diffusion is trained with.
 NOISE_LEVEL_MIN = 0.00085
 NOISE_LEVEL_MAX = 0.9953399
 
 KARRAS_RHO = 7.0
+
+
+def create_noise(width: int, height: int, model: safetensors.safe_open) -> torch.Tensor:
+    """Creates a latent of pure noise for an image of the given width and height
+    in pixels - the starting point for generating an image from nothing. Its
+    number of channels and how much smaller it is than the image come from the
+    model's VAE, and each side is rounded down just as it would be when encoding
+    an image of that size."""
+
+    ratio = get_downscale_ratio(model)
+    channels = get_latent_channels(model)
+    return torch.randn(channels, height // ratio, width // ratio)
 
 
 def noise_tensor(tensor: torch.Tensor, noise_level: float) -> torch.Tensor:
