@@ -14,6 +14,7 @@ from pydiffuse.unet import (
     _get_layers,
     _get_numbers,
     _get_transformer_tensors,
+    _get_unet_tensors,
     _input_blocks,
     _noise_level_to_embedding,
     _noise_to_t,
@@ -26,6 +27,76 @@ from pydiffuse.unet import (
     _transformer_block,
     _upsample,
 )
+
+
+class GetUnetTensorsTests(TestCase):
+    @patch("pydiffuse.unet._get_numbers")
+    @patch("pydiffuse.unet._get_layer")
+    @patch("pydiffuse.unet._get_layers")
+    @patch("pydiffuse.unet._get_block_tensors")
+    def test_get_unet_tensors(
+        self, mock_block_tensors, mock_layers, mock_layer, mock_numbers
+    ):
+        numbers = {
+            "model.diffusion_model.time_embed": [0, 2],
+            "model.diffusion_model.input_blocks": [0, 1, 2],
+            "model.diffusion_model.output_blocks": [0, 3],
+        }
+        mock_numbers.side_effect = lambda model, prefix: numbers[prefix]
+        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
+        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
+        mock_block_tensors.side_effect = lambda model, prefix: f"block {prefix}"
+        model = Mock(safetensors.safe_open)
+        tensors = _get_unet_tensors(model)
+        self.assertEqual(
+            [call[0] for call in mock_numbers.call_args_list],
+            [
+                (model, "model.diffusion_model.time_embed"),
+                (model, "model.diffusion_model.input_blocks"),
+                (model, "model.diffusion_model.output_blocks"),
+            ],
+        )
+        self.assertEqual(
+            [call[0] for call in mock_layer.call_args_list],
+            [
+                (model, "model.diffusion_model.time_embed.0"),
+                (model, "model.diffusion_model.time_embed.2"),
+            ],
+        )
+        self.assertEqual(
+            [call[0] for call in mock_block_tensors.call_args_list],
+            [
+                (model, "model.diffusion_model.input_blocks.0"),
+                (model, "model.diffusion_model.input_blocks.1"),
+                (model, "model.diffusion_model.input_blocks.2"),
+                (model, "model.diffusion_model.middle_block"),
+                (model, "model.diffusion_model.output_blocks.0"),
+                (model, "model.diffusion_model.output_blocks.3"),
+            ],
+        )
+        mock_layers.assert_called_once_with(
+            model, "model.diffusion_model.out", ("0", "2")
+        )
+        self.assertEqual(
+            tensors,
+            {
+                "time_embed": [
+                    "layer model.diffusion_model.time_embed.0",
+                    "layer model.diffusion_model.time_embed.2",
+                ],
+                "input_blocks": [
+                    "block model.diffusion_model.input_blocks.0",
+                    "block model.diffusion_model.input_blocks.1",
+                    "block model.diffusion_model.input_blocks.2",
+                ],
+                "middle_block": "block model.diffusion_model.middle_block",
+                "output_blocks": [
+                    "block model.diffusion_model.output_blocks.0",
+                    "block model.diffusion_model.output_blocks.3",
+                ],
+                "out": "layers model.diffusion_model.out",
+            },
+        )
 
 
 class GetLayerTests(TestCase):
