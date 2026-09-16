@@ -84,3 +84,29 @@ class DenoiseTestCase(SampleTestCase):
         self.check_denoised(
             denoised, [29.3, -12.4, -13.1, -22.9, -12.6, 6.5, -25.6, 2.5]
         )
+
+    def test_can_set_cfg(self):
+        # Run the command with a custom CFG
+        result = self.run_command(
+            self.latent_path,
+            self.positive_path,
+            self.negative_path,
+            self.schedule_path,
+            self.model_path,
+            cfg=5,
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "denoised.pt").exists())
+
+        # Denoising is correct
+        with open(self.test_dir / "denoised.pt", "rb") as f:
+            denoised = torch.load(f)
+        self.check_denoised(
+            denoised, [29.5, -12.6, -13.6, -23.7, -12.8, 6.5, -25.7, 2.7]
+        )

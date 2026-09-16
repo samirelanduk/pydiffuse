@@ -245,7 +245,10 @@ def predict_noise(latent, noise_level, conditioning, model, noise):
     "--cfg",
     type=float,
     default=1.0,
-    help="How strongly to steer towards the positive conditioning.",
+    help=(
+        "How strongly to steer towards the positive conditioning. At 1, the "
+        "negative conditioning has no effect."
+    ),
 )
 @click.option(
     "--algorithm",
