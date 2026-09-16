@@ -1,6 +1,7 @@
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+import safetensors
 import torch
 
 from pydiffuse.unet import (
@@ -8,6 +9,7 @@ from pydiffuse.unet import (
     _block,
     _combine_chunks,
     _feed_forward,
+    _get_transformer_tensors,
     _input_blocks,
     _noise_level_to_embedding,
     _noise_to_t,
@@ -20,6 +22,111 @@ from pydiffuse.unet import (
     _transformer_block,
     _upsample,
 )
+
+
+class GetTransformerTensorsTests(TestCase):
+    @patch("pydiffuse.unet._get_numbers")
+    @patch("pydiffuse.unet._get_layers")
+    def test_get_transformer_tensors(self, mock_layers, mock_numbers):
+        mock_numbers.return_value = [0, 2]
+        mock_layers.side_effect = lambda model, prefix, names: {
+            name: f"layers {prefix}.{name}" for name in names
+        }
+        model = Mock(safetensors.safe_open)
+        tensors = _get_transformer_tensors(
+            model, "model.diffusion_model.input_blocks.1.1"
+        )
+        mock_numbers.assert_called_once_with(
+            model, "model.diffusion_model.input_blocks.1.1.transformer_blocks"
+        )
+        self.assertEqual(
+            [call[0] for call in mock_layers.call_args_list],
+            [
+                (
+                    model,
+                    "model.diffusion_model.input_blocks.1.1",
+                    ("norm", "proj_in", "proj_out"),
+                ),
+                (
+                    model,
+                    "model.diffusion_model.input_blocks.1.1.transformer_blocks.0",
+                    ("norm1", "norm2", "norm3", "ff.net.0.proj", "ff.net.2"),
+                ),
+                (
+                    model,
+                    "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1",
+                    ("to_q", "to_k", "to_v", "to_out.0"),
+                ),
+                (
+                    model,
+                    "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn2",
+                    ("to_q", "to_k", "to_v", "to_out.0"),
+                ),
+                (
+                    model,
+                    "model.diffusion_model.input_blocks.1.1.transformer_blocks.2",
+                    ("norm1", "norm2", "norm3", "ff.net.0.proj", "ff.net.2"),
+                ),
+                (
+                    model,
+                    "model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn1",
+                    ("to_q", "to_k", "to_v", "to_out.0"),
+                ),
+                (
+                    model,
+                    "model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn2",
+                    ("to_q", "to_k", "to_v", "to_out.0"),
+                ),
+            ],
+        )
+        self.assertEqual(
+            tensors,
+            {
+                "norm": "layers model.diffusion_model.input_blocks.1.1.norm",
+                "proj_in": "layers model.diffusion_model.input_blocks.1.1.proj_in",
+                "proj_out": "layers model.diffusion_model.input_blocks.1.1.proj_out",
+                "transformer_blocks": [
+                    {
+                        "norm1": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.norm1",
+                        "norm2": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.norm2",
+                        "norm3": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.norm3",
+                        "ff.net.0.proj": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.ff.net.0.proj",
+                        "ff.net.2": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.ff.net.2",
+                        "attn1": {
+                            "to_q": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_q",
+                            "to_k": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_k",
+                            "to_v": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_v",
+                            "to_out.0": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_out.0",
+                        },
+                        "attn2": {
+                            "to_q": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn2.to_q",
+                            "to_k": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn2.to_k",
+                            "to_v": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn2.to_v",
+                            "to_out.0": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn2.to_out.0",
+                        },
+                    },
+                    {
+                        "norm1": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.norm1",
+                        "norm2": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.norm2",
+                        "norm3": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.norm3",
+                        "ff.net.0.proj": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.ff.net.0.proj",
+                        "ff.net.2": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.ff.net.2",
+                        "attn1": {
+                            "to_q": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn1.to_q",
+                            "to_k": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn1.to_k",
+                            "to_v": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn1.to_v",
+                            "to_out.0": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn1.to_out.0",
+                        },
+                        "attn2": {
+                            "to_q": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn2.to_q",
+                            "to_k": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn2.to_k",
+                            "to_v": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn2.to_v",
+                            "to_out.0": "layers model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn2.to_out.0",
+                        },
+                    },
+                ],
+            },
+        )
 
 
 class NoiseLevelToEmbeddingTests(TestCase):
