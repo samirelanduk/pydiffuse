@@ -9,6 +9,7 @@ from pydiffuse.unet import (
     _combine_chunks,
     _feed_forward,
     _input_blocks,
+    _noise_level_to_embedding,
     _noise_to_t,
     _out_layers,
     _output_blocks,
@@ -19,6 +20,25 @@ from pydiffuse.unet import (
     _transformer_block,
     _upsample,
 )
+
+
+class NoiseLevelToEmbeddingTests(TestCase):
+    @patch("pydiffuse.unet._noise_to_t")
+    @patch("pydiffuse.unet._timestep_sinusoids")
+    @patch("pydiffuse.unet._time_embed")
+    def test_noise_level_to_embedding(
+        self, mock_time_embed, mock_sinusoids, mock_noise_to_t
+    ):
+        time_embed = [
+            {"weight": torch.zeros(128, 32), "bias": torch.zeros(128)},
+            {"weight": torch.zeros(128, 128), "bias": torch.zeros(128)},
+        ]
+        model_tensors = {"time_embed": time_embed}
+        result = _noise_level_to_embedding(0.5, model_tensors)
+        self.assertEqual(result, mock_time_embed.return_value)
+        mock_noise_to_t.assert_called_once_with(0.5)
+        mock_sinusoids.assert_called_once_with(mock_noise_to_t.return_value, 32)
+        mock_time_embed.assert_called_once_with(mock_sinusoids.return_value, time_embed)
 
 
 class NoiseToTTests(TestCase):

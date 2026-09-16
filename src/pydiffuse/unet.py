@@ -163,6 +163,9 @@ def _get_transformer_tensors(model: safetensors.safe_open, prefix: str) -> dict:
 
 
 def _noise_level_to_embedding(noise_level: float, model_tensors: dict) -> torch.Tensor:
+    """Converts a noise level into the vector representation that can be passed
+    to the UNet's time embedding."""
+
     t = _noise_to_t(noise_level)
     sinusoid_width = model_tensors["time_embed"][0]["weight"].shape[1]
     sinusoids = _timestep_sinusoids(t, sinusoid_width)
