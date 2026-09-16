@@ -13,6 +13,7 @@ from pydiffuse.unet import (
     _out_layers,
     _output_blocks,
     _resnet_block,
+    _time_embed,
     _timestep_sinusoids,
     _transformer,
     _transformer_block,
@@ -58,6 +59,48 @@ class TimestepSinusoidsTests(TestCase):
                 ),
             )
         )
+
+
+class TimeEmbedTests(TestCase):
+    @patch("pydiffuse.unet.silu")
+    @patch("pydiffuse.unet.linear")
+    def test_time_embed(self, mock_linear, mock_silu):
+        x = Mock(torch.Tensor)
+        time_embed = [
+            {"weight": "layer 0 weight", "bias": "layer 0 bias"},
+            {"weight": "layer 1 weight", "bias": "layer 1 bias"},
+            {"weight": "layer 2 weight", "bias": "layer 2 bias"},
+        ]
+        mock_linear.side_effect = ["linear 0 output", "linear 1 output", "embedding"]
+        mock_silu.side_effect = ["silu 0 output", "silu 1 output"]
+        result = _time_embed(x, time_embed)
+        self.assertEqual(result, "embedding")
+        self.assertEqual(
+            [call[0] for call in mock_linear.call_args_list],
+            [
+                ("layer 0 weight", "layer 0 bias", x),
+                ("layer 1 weight", "layer 1 bias", "silu 0 output"),
+                ("layer 2 weight", "layer 2 bias", "silu 1 output"),
+            ],
+        )
+        self.assertEqual(
+            [call[0] for call in mock_silu.call_args_list],
+            [("linear 0 output",), ("linear 1 output",)],
+        )
+
+    @patch("pydiffuse.unet.silu")
+    @patch("pydiffuse.unet.linear")
+    def test_time_embed_single_layer(self, mock_linear, mock_silu):
+        x = Mock(torch.Tensor)
+        time_embed = [{"weight": "layer 0 weight", "bias": "layer 0 bias"}]
+        mock_linear.side_effect = ["embedding"]
+        result = _time_embed(x, time_embed)
+        self.assertEqual(result, "embedding")
+        self.assertEqual(
+            [call[0] for call in mock_linear.call_args_list],
+            [("layer 0 weight", "layer 0 bias", x)],
+        )
+        mock_silu.assert_not_called()
 
 
 class CombineChunksTests(TestCase):
