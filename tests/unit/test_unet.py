@@ -26,7 +26,64 @@ from pydiffuse.unet import (
     _transformer,
     _transformer_block,
     _upsample,
+    unet,
 )
+
+
+class UnetTests(TestCase):
+    @patch("pydiffuse.unet._get_unet_tensors")
+    @patch("pydiffuse.unet._noise_level_to_embedding")
+    @patch("pydiffuse.unet._combine_chunks")
+    @patch("pydiffuse.unet._input_blocks")
+    @patch("pydiffuse.unet._block")
+    @patch("pydiffuse.unet._output_blocks")
+    @patch("pydiffuse.unet._out_layers")
+    def test_unet(
+        self,
+        mock_out_layers,
+        mock_output_blocks,
+        mock_block,
+        mock_input_blocks,
+        mock_combine,
+        mock_embedding,
+        mock_tensors,
+    ):
+        mock_tensors.return_value = {
+            "time_embed": "time_embed",
+            "input_blocks": "input_blocks",
+            "middle_block": "middle_block",
+            "output_blocks": "output_blocks",
+            "out": "out",
+        }
+        mock_input_blocks.return_value = ("input blocks output", "skips")
+        latent = Mock(torch.Tensor)
+        conditioning = Mock(torch.Tensor)
+        model = Mock(safetensors.safe_open)
+        result = unet(latent, 0.5, conditioning, model)
+        self.assertEqual(result, mock_out_layers.return_value)
+        mock_tensors.assert_called_once_with(model)
+        mock_embedding.assert_called_once_with(0.5, mock_tensors.return_value)
+        mock_combine.assert_called_once_with(conditioning)
+        mock_input_blocks.assert_called_once_with(
+            latent,
+            "input_blocks",
+            mock_embedding.return_value,
+            mock_combine.return_value,
+        )
+        mock_block.assert_called_once_with(
+            "input blocks output",
+            "middle_block",
+            mock_embedding.return_value,
+            mock_combine.return_value,
+        )
+        mock_output_blocks.assert_called_once_with(
+            mock_block.return_value,
+            "skips",
+            "output_blocks",
+            mock_embedding.return_value,
+            mock_combine.return_value,
+        )
+        mock_out_layers.assert_called_once_with(mock_output_blocks.return_value, "out")
 
 
 class GetUnetTensorsTests(TestCase):

@@ -40,6 +40,9 @@ def unet(
     conditioning: torch.Tensor,
     model: safetensors.safe_open,
 ) -> torch.Tensor:
+    """Runs the UNet on a noised latent to predict the noise tensor that was
+    added to it, for a given noise level and conditioning."""
+
     model_tensors = _get_unet_tensors(model)
     time_embedding = _noise_level_to_embedding(noise_level, model_tensors)
     conditioning = _combine_chunks(conditioning)
