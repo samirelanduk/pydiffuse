@@ -11,6 +11,7 @@ from pydiffuse.clip import embed as clip_embed
 from pydiffuse.clip import encode as clip_encode
 from pydiffuse.clip import tokenize as clip_tokenize
 from pydiffuse.noise import exponential_schedule, karras_schedule, noise_tensor
+from pydiffuse.sample import sample_euler, sample_heun
 from pydiffuse.unet import unet as unet_predict
 from pydiffuse.vae import decode as vae_decode
 from pydiffuse.vae import encode as vae_encode
@@ -39,6 +40,11 @@ def noise():
 @cli.group()
 def unet():
     """UNet commands."""
+
+
+@cli.group()
+def sample():
+    """Sampling commands."""
 
 
 def check_parent(ctx, param, value):
@@ -227,6 +233,47 @@ def predict_noise(latent, noise_level, conditioning, model, noise):
             latent_tensor, noise_level, conditioning_tensor, tensors
         )
     torch.save(prediction_tensor, noise)
+
+
+@sample.command("denoise")
+@click.argument("latent", type=click.Path(exists=True, dir_okay=False))
+@click.argument("positive", type=click.Path(exists=True, dir_okay=False))
+@click.argument("negative", type=click.Path(exists=True, dir_okay=False))
+@click.argument("schedule", type=click.Path(exists=True, dir_okay=False))
+@click.argument("model", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--cfg",
+    type=float,
+    default=1.0,
+    help="How strongly to steer towards the positive conditioning.",
+)
+@click.option(
+    "--algorithm",
+    type=click.Choice(["euler", "heun"]),
+    default="euler",
+    help="The algorithm to sample with.",
+)
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="denoised.pt",
+    help="Path to save the denoised latent to.",
+)
+def denoise_latent(latent, positive, negative, schedule, model, cfg, algorithm, output):
+    """Denoises a latent by stepping through a noise schedule using a UNet."""
+
+    samplers = {"euler": sample_euler, "heun": sample_heun}
+    latent_tensor = torch.load(latent)
+    positive_tensor = torch.load(positive)
+    negative_tensor = torch.load(negative)
+    with open(schedule) as f:
+        levels = [float(line) for line in f.read().splitlines()]
+    with safe_open(model, framework="pt", device="cpu") as tensors:
+        denoised_tensor = samplers[algorithm](
+            positive_tensor, negative_tensor, latent_tensor, tensors, levels, cfg
+        )
+    torch.save(denoised_tensor, output)
 
 
 if __name__ == "__main__":
