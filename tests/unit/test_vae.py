@@ -55,10 +55,11 @@ class EncodeTests(TestCase):
             "quant_conv": {"weight": "quant weight", "bias": "quant bias"},
         }
         mock_convolution.return_value.shape = (8, 4, 4)
+        mock_convolution.return_value.narrow.return_value = torch.tensor([1.0, 2.0])
         image = Mock(Image.Image)
         model = Mock(safetensors.safe_open)
         latent = encode(image, model)
-        self.assertEqual(latent, mock_convolution.return_value.narrow.return_value)
+        self.assertTrue(torch.allclose(latent, torch.tensor([0.18215, 0.3643])))
         mock_tensors.assert_called_once_with(model)
         mock_ratio.assert_called_once_with(model)
         mock_to_tensor.assert_called_once_with(image, mock_ratio.return_value)
@@ -103,17 +104,22 @@ class DecodeTests(TestCase):
             "norm_out": "norm_out",
             "conv_out": "conv_out",
         }
-        latent = Mock(torch.Tensor)
+        latent = torch.tensor([0.18215, 0.3643])
         model = Mock(safetensors.safe_open)
         image = decode(latent, model)
         self.assertEqual(image, mock_to_image.return_value)
         mock_tensors.assert_called_once_with(model)
         self.assertEqual(
-            [call[0] for call in mock_convolution.call_args_list],
-            [
-                ("post weight", "post bias", latent),
-                ("conv_in weight", "conv_in bias", mock_convolution.return_value),
-            ],
+            [call[0][:2] for call in mock_convolution.call_args_list],
+            [("post weight", "post bias"), ("conv_in weight", "conv_in bias")],
+        )
+        self.assertTrue(
+            torch.allclose(
+                mock_convolution.call_args_list[0][0][2], torch.tensor([1.0, 2.0])
+            )
+        )
+        self.assertEqual(
+            mock_convolution.call_args_list[1][0][2], mock_convolution.return_value
         )
         self.assertEqual(
             [call[1] for call in mock_convolution.call_args_list],

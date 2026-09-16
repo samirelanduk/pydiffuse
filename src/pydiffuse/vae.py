@@ -19,6 +19,8 @@ DOWNSAMPLE_STRIDE = 2
 UPSAMPLE_SCALE = 2
 NORM_GROUPS = 32
 
+LATENT_SCALE = 0.18215
+
 
 def encode(image: Image.Image, model: safetensors.safe_open) -> torch.Tensor:
     """Encodes an image into latent space using a VAE model."""
@@ -41,7 +43,7 @@ def encode(image: Image.Image, model: safetensors.safe_open) -> torch.Tensor:
         x,
     )
     x = x.narrow(0, 0, x.shape[0] // 2)
-    return x
+    return x * LATENT_SCALE
 
 
 def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
@@ -51,7 +53,7 @@ def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
     x = convolution(
         model_tensors["post_quant_conv"]["weight"],
         model_tensors["post_quant_conv"]["bias"],
-        latent,
+        latent / LATENT_SCALE,
     )
     x = convolution(
         model_tensors["conv_in"]["weight"],
