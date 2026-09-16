@@ -23,6 +23,9 @@ TRANSFORMER_BLOCK_LAYERS = ("norm1", "norm2", "norm3", "ff.net.0.proj", "ff.net.
 ATTENTION_LAYERS = ("to_q", "to_k", "to_v", "to_out.0")
 OUT_LAYERS = ("0", "2")
 
+BETA_START = 0.00085
+BETA_END = 0.012
+TIMESTEPS = 1000
 CONV_PADDING = 1
 DOWNSAMPLE_PADDING = 1
 DOWNSAMPLE_STRIDE = 2
@@ -166,22 +169,32 @@ def _noise_level_to_embedding(noise_level: float, model_tensors: dict) -> torch.
     return _time_embed(sinusoids, model_tensors["time_embed"])
 
 
-def _noise_to_t(noise_level) -> int:
+def _noise_to_t(
+    noise_level: float,
+    beta_start: float = BETA_START,
+    beta_end: float = BETA_END,
+    timesteps: int = TIMESTEPS,
+) -> int:
+    """Finds the timestep whose noise level is closest to the given one. Each
+    timestep's noise level comes from a beta schedule, in which betas are spaced
+    linearly by their square root between beta_start and beta_end. Closeness is
+    measured on the log of the noise-to-image ratio."""
+
     if noise_level <= 0:
         return 0
     if noise_level >= 1:
-        return 999
+        return timesteps - 1
     target = math.log(noise_level / (1 - noise_level))
-    start, end = 0.00085**0.5, 0.012**0.5
+    start, end = beta_start**0.5, beta_end**0.5
     image_fraction = 1.0
     previous = -math.inf
-    for t in range(1000):
-        image_fraction *= 1 - (start + (t / 999) * (end - start)) ** 2
+    for t in range(timesteps):
+        image_fraction *= 1 - (start + (t / (timesteps - 1)) * (end - start)) ** 2
         log_ratio = math.log((1 - image_fraction) / image_fraction)
         if log_ratio >= target:
             return t if log_ratio - target <= target - previous else t - 1
         previous = log_ratio
-    return 999
+    return timesteps - 1
 
 
 def _timestep_sinusoids(t: int, width: int) -> torch.Tensor:

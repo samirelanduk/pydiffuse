@@ -34,6 +34,15 @@ class NoiseToTTests(TestCase):
     def test_quarter_noise(self):
         self.assertEqual(_noise_to_t(0.25), 202)
 
+    def test_custom_beta_start(self):
+        self.assertEqual(_noise_to_t(0.5, beta_start=0.0001), 494)
+
+    def test_custom_beta_end(self):
+        self.assertEqual(_noise_to_t(0.5, beta_end=0.02), 307)
+
+    def test_custom_timesteps(self):
+        self.assertEqual(_noise_to_t(0.5, timesteps=500), 260)
+
 
 class TimestepSinusoidsTests(TestCase):
     def test_timestep_zero(self):
