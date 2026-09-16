@@ -10,7 +10,6 @@ from pydiffuse.vae import (
     _decode_up,
     _encode_down,
     _get_decode_tensors,
-    _get_downscale_ratio,
     _get_encode_tensors,
     _get_layer,
     _get_layers,
@@ -24,12 +23,14 @@ from pydiffuse.vae import (
     _upsample,
     decode,
     encode,
+    get_downscale_ratio,
+    get_latent_channels,
 )
 
 
 class EncodeTests(TestCase):
     @patch("pydiffuse.vae._get_encode_tensors")
-    @patch("pydiffuse.vae._get_downscale_ratio")
+    @patch("pydiffuse.vae.get_downscale_ratio")
     @patch("pydiffuse.vae._image_to_tensor")
     @patch("pydiffuse.vae.convolution")
     @patch("pydiffuse.vae._encode_down")
@@ -59,7 +60,7 @@ class EncodeTests(TestCase):
         latent = encode(image, model)
         self.assertEqual(latent, mock_convolution.return_value.narrow.return_value)
         mock_tensors.assert_called_once_with(model)
-        mock_ratio.assert_called_once_with("down")
+        mock_ratio.assert_called_once_with(model)
         mock_to_tensor.assert_called_once_with(image, mock_ratio.return_value)
         self.assertEqual(
             [call[0] for call in mock_convolution.call_args_list],
@@ -122,6 +123,45 @@ class DecodeTests(TestCase):
         mock_up.assert_called_once_with(mock_mid.return_value, "up")
         mock_out.assert_called_once_with(mock_up.return_value, "norm_out", "conv_out")
         mock_to_image.assert_called_once_with(mock_out.return_value)
+
+
+class GetDownscaleRatioTests(TestCase):
+    @patch("pydiffuse.vae._get_numbers")
+    def test_get_downscale_ratio(self, mock_numbers):
+        model = MagicMock()
+        model.keys.return_value = [
+            "first_stage_model.encoder.down.0.downsample.conv.weight",
+            "first_stage_model.encoder.down.0.downsample.conv.bias",
+            "first_stage_model.encoder.down.1.block.0.conv1.weight",
+            "first_stage_model.encoder.down.2.downsample.conv.weight",
+            "first_stage_model.encoder.down.3.downsample.conv.weight",
+            "first_stage_model.decoder.up.4.upsample.conv.weight",
+        ]
+        mock_numbers.return_value = [0, 1, 2, 3, 4]
+        self.assertEqual(get_downscale_ratio(model), 8)
+        mock_numbers.assert_called_once_with(model, "first_stage_model.encoder.down")
+
+    @patch("pydiffuse.vae._get_numbers")
+    def test_get_downscale_ratio_with_no_downsampling(self, mock_numbers):
+        model = MagicMock()
+        model.keys.return_value = [
+            "first_stage_model.encoder.down.0.block.0.conv1.weight",
+            "first_stage_model.encoder.down.1.block.0.conv1.weight",
+            "first_stage_model.decoder.up.1.upsample.conv.weight",
+        ]
+        mock_numbers.return_value = [0, 1]
+        self.assertEqual(get_downscale_ratio(model), 1)
+        mock_numbers.assert_called_once_with(model, "first_stage_model.encoder.down")
+
+
+class GetLatentChannelsTests(TestCase):
+    def test_get_latent_channels(self):
+        model = MagicMock()
+        model.get_tensor.return_value = torch.zeros(4, 6, 1, 1)
+        self.assertEqual(get_latent_channels(model), 6)
+        model.get_tensor.assert_called_once_with(
+            "first_stage_model.post_quant_conv.weight"
+        )
 
 
 class GetEncodeTensorsTests(TestCase):
@@ -406,21 +446,6 @@ class GetMidTensorsTests(TestCase):
                 ),
             ],
         )
-
-
-class GetDownscaleRatioTests(TestCase):
-    def test_get_downscale_ratio(self):
-        down = [
-            {"downsample": "downsample"},
-            {"downsample": "downsample"},
-            {"downsample": "downsample"},
-            {"downsample": None},
-        ]
-        self.assertEqual(_get_downscale_ratio(down), 8)
-
-    def test_get_downscale_ratio_with_no_downsampling(self):
-        down = [{"downsample": None}, {"downsample": None}]
-        self.assertEqual(_get_downscale_ratio(down), 1)
 
 
 class ImageToTensorTests(TestCase):

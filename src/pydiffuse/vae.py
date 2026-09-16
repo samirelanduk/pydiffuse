@@ -24,7 +24,7 @@ def encode(image: Image.Image, model: safetensors.safe_open) -> torch.Tensor:
     """Encodes an image into latent space using a VAE model."""
 
     model_tensors = _get_encode_tensors(model)
-    downscale_ratio = _get_downscale_ratio(model_tensors["down"])
+    downscale_ratio = get_downscale_ratio(model)
     x = _image_to_tensor(image, downscale_ratio)
     x = convolution(
         model_tensors["conv_in"]["weight"],
@@ -63,6 +63,28 @@ def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
     x = _decode_up(x, model_tensors["up"])
     x = _out_layers(x, model_tensors["norm_out"], model_tensors["conv_out"])
     return _tensor_to_image(x)
+
+
+def get_downscale_ratio(model: safetensors.safe_open) -> int:
+    """Works out how much smaller than the image the latent will be, which is
+    the stride of every downsampling convolution in the encoder multiplied
+    together."""
+
+    keys = model.keys()
+    downsamples = [
+        level
+        for level in _get_numbers(model, f"{ENCODER_PREFIX}.down")
+        if f"{ENCODER_PREFIX}.down.{level}.downsample.conv.weight" in keys
+    ]
+    return DOWNSAMPLE_STRIDE ** len(downsamples)
+
+
+def get_latent_channels(model: safetensors.safe_open) -> int:
+    """Works out how many channels a latent has, which is the number of channels
+    the decoder's first convolution takes in."""
+
+    weight = model.get_tensor(f"{MODEL_PREFIX}.post_quant_conv.weight")
+    return weight.shape[1]
 
 
 def _get_encode_tensors(model: safetensors.safe_open) -> dict:
@@ -154,14 +176,6 @@ def _get_mid_tensors(model: safetensors.safe_open, prefix: str) -> dict:
         "attn_1": _get_layers(model, f"{prefix}.mid.attn_1", ATTENTION_LAYERS),
         "block_2": _get_layers(model, f"{prefix}.mid.block_2", RESNET_LAYERS),
     }
-
-
-def _get_downscale_ratio(down: list[dict]) -> int:
-    """Works out how much smaller than the image the latent will be, which is
-    the stride of every downsampling convolution multiplied together."""
-
-    downsamples = [level for level in down if level["downsample"] is not None]
-    return DOWNSAMPLE_STRIDE ** len(downsamples)
 
 
 def _image_to_tensor(image: Image.Image, downscale_ratio: int) -> torch.Tensor:
