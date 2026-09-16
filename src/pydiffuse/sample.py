@@ -16,6 +16,10 @@ def sample(
 ) -> torch.Tensor:
     for noise_start, noise_end in pairwise(noise_schedule):
         positive_noise = unet(latent, noise_start, positive, model)
-        negative_noise = unet(latent, noise_end, negative, model)
-        latent = positive_noise + cfg * (positive_noise - negative_noise)
+        negative_noise = unet(latent, noise_start, negative, model)
+        noise = negative_noise + cfg * (positive_noise - negative_noise)
+        scale_noise, scale_image = noise_start**0.5, (1 - noise_start) ** 0.5
+        image = (latent - scale_noise * noise) / scale_image
+        next_scale_noise, next_scale_image = noise_end**0.5, (1 - noise_end) ** 0.5
+        latent = next_scale_image * image + next_scale_noise * noise
     return latent
