@@ -37,6 +37,7 @@ class DenoiseTestCase(SampleTestCase):
         self.positive_path = data_path / "positive-conditioning.pt"
         self.negative_path = data_path / "negative-conditioning.pt"
         self.model_path = Path(__file__).parent / "models" / "unet_model.safetensors"
+        self.euler_denoised = [29.3, -12.4, -13.1, -22.9, -12.6, 6.5, -25.6, 2.5]
 
     def create_latent(self):
         latent_path = self.test_dir / "latent.pt"
@@ -81,8 +82,56 @@ class DenoiseTestCase(SampleTestCase):
         # Denoising is correct
         with open(self.test_dir / "denoised.pt", "rb") as f:
             denoised = torch.load(f)
+        self.check_denoised(denoised, self.euler_denoised)
+
+    def test_can_use_euler_algorithm(self):
+        # Run the command with the euler algorithm named explicitly
+        result = self.run_command(
+            self.latent_path,
+            self.positive_path,
+            self.negative_path,
+            self.schedule_path,
+            self.model_path,
+            algorithm="euler",
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "denoised.pt").exists())
+
+        # Denoising is correct
+        with open(self.test_dir / "denoised.pt", "rb") as f:
+            denoised = torch.load(f)
+        self.check_denoised(denoised, self.euler_denoised)
+
+    def test_can_use_heun_algorithm(self):
+        # Run the command with the heun algorithm
+        result = self.run_command(
+            self.latent_path,
+            self.positive_path,
+            self.negative_path,
+            self.schedule_path,
+            self.model_path,
+            algorithm="heun",
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "denoised.pt").exists())
+
+        # Denoising is correct for the heun algorithm
+        with open(self.test_dir / "denoised.pt", "rb") as f:
+            denoised = torch.load(f)
         self.check_denoised(
-            denoised, [29.3, -12.4, -13.1, -22.9, -12.6, 6.5, -25.6, 2.5]
+            denoised, [26.0, -10.0, -16.4, -23.7, -11.5, 5.8, -24.5, 1.9]
         )
 
     def test_can_set_cfg(self):
