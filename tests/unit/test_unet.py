@@ -10,6 +10,7 @@ from pydiffuse.unet import (
     _combine_chunks,
     _feed_forward,
     _get_block_tensors,
+    _get_layer,
     _get_layers,
     _get_numbers,
     _get_transformer_tensors,
@@ -25,6 +26,72 @@ from pydiffuse.unet import (
     _transformer_block,
     _upsample,
 )
+
+
+class GetLayerTests(TestCase):
+    def test_get_layer(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "model.diffusion_model.input_blocks.0.0.weight",
+            "model.diffusion_model.input_blocks.0.0.bias",
+            "model.diffusion_model.out.0.weight",
+            "model.diffusion_model.time_embed.0.weight",
+            "model.diffusion_model.time_embed.0.bias",
+            "xxx",
+        ]
+        model.get_tensor.side_effect = lambda key: torch.tensor(
+            [len(key), len(key) * 2, len(key) * 3], dtype=torch.float16
+        )
+        layer = _get_layer(model, "model.diffusion_model.input_blocks.0.0") or {}
+        self.assertEqual(layer["weight"].dtype, torch.float32)
+        self.assertEqual(layer["bias"].dtype, torch.float32)
+        for key in layer:
+            layer[key] = layer[key].tolist()
+        self.assertEqual(
+            layer,
+            {
+                "weight": [45, 90, 135],
+                "bias": [43, 86, 129],
+            },
+        )
+
+    def test_get_layer_weight_not_in_model(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "model.diffusion_model.input_blocks.0.0.weight",
+            "model.diffusion_model.input_blocks.0.0.bias",
+            "model.diffusion_model.out.0.weight",
+            "model.diffusion_model.out.2.bias",
+            "xxx",
+        ]
+        model.get_tensor.side_effect = lambda key: torch.tensor(
+            [len(key), len(key) * 2, len(key) * 3], dtype=torch.float16
+        )
+        self.assertIsNone(_get_layer(model, "model.diffusion_model.out.2"))
+        model.get_tensor.assert_not_called()
+
+    def test_get_layer_bias_not_in_model(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "model.diffusion_model.input_blocks.0.0.weight",
+            "model.diffusion_model.input_blocks.0.0.bias",
+            "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_q.weight",
+            "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_k.bias",
+            "xxx",
+        ]
+        model.get_tensor.side_effect = lambda key: torch.tensor(
+            [len(key), len(key) * 2, len(key) * 3], dtype=torch.float16
+        )
+        layer = (
+            _get_layer(
+                model,
+                "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_q",
+            )
+            or {}
+        )
+        self.assertEqual(layer["weight"].dtype, torch.float32)
+        self.assertEqual(layer["weight"].tolist(), [77, 154, 231])
+        self.assertIsNone(layer["bias"])
 
 
 class GetNumbersTests(TestCase):
