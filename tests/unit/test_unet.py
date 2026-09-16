@@ -9,6 +9,7 @@ from pydiffuse.unet import (
     _block,
     _combine_chunks,
     _feed_forward,
+    _get_layers,
     _get_transformer_tensors,
     _input_blocks,
     _noise_level_to_embedding,
@@ -22,6 +23,31 @@ from pydiffuse.unet import (
     _transformer_block,
     _upsample,
 )
+
+
+class GetLayersTests(TestCase):
+    @patch("pydiffuse.unet._get_layer")
+    def test_get_layers(self, mock_layer):
+        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
+        model = Mock(safetensors.safe_open)
+        layers = _get_layers(model, "prefix", ("norm1", "conv1", "nin_shortcut"))
+
+        self.assertEqual(
+            [call[0] for call in mock_layer.call_args_list],
+            [
+                (model, "prefix.norm1"),
+                (model, "prefix.conv1"),
+                (model, "prefix.nin_shortcut"),
+            ],
+        )
+        self.assertEqual(
+            layers,
+            {
+                "norm1": "layer prefix.norm1",
+                "conv1": "layer prefix.conv1",
+                "nin_shortcut": "layer prefix.nin_shortcut",
+            },
+        )
 
 
 class GetTransformerTensorsTests(TestCase):
