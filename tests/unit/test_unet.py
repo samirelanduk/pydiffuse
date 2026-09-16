@@ -1,5 +1,5 @@
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import safetensors
 import torch
@@ -9,6 +9,7 @@ from pydiffuse.unet import (
     _block,
     _combine_chunks,
     _feed_forward,
+    _get_block_tensors,
     _get_layers,
     _get_transformer_tensors,
     _input_blocks,
@@ -23,6 +24,80 @@ from pydiffuse.unet import (
     _transformer_block,
     _upsample,
 )
+
+
+class GetBlockTensorsTests(TestCase):
+    @patch("pydiffuse.unet._get_numbers")
+    @patch("pydiffuse.unet._get_layer")
+    @patch("pydiffuse.unet._get_layers")
+    @patch("pydiffuse.unet._get_transformer_tensors")
+    def test_get_block_tensors(
+        self, mock_transformer, mock_layers, mock_layer, mock_numbers
+    ):
+        model = MagicMock()
+        model.keys.return_value = [
+            "block.0.in_layers.2.weight",
+            "block.1.proj_in.weight",
+            "block.2.op.weight",
+            "block.3.conv.weight",
+            "block.5.weight",
+        ]
+        mock_numbers.return_value = [0, 1, 2, 3, 5]
+        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
+        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
+        mock_transformer.side_effect = lambda model, prefix: f"transformer {prefix}"
+        parts = _get_block_tensors(model, "block")
+        self.assertEqual(
+            parts,
+            [
+                ("resnet", "layers block.0"),
+                ("transformer", "transformer block.1"),
+                ("downsample", "layer block.2.op"),
+                ("upsample", "layer block.3.conv"),
+                ("conv", "layer block.5"),
+            ],
+        )
+        mock_numbers.assert_called_once_with(model, "block")
+        self.assertEqual(
+            [call[0] for call in mock_layer.call_args_list],
+            [(model, "block.2.op"), (model, "block.3.conv"), (model, "block.5")],
+        )
+        mock_layers.assert_called_once_with(
+            model,
+            "block.0",
+            (
+                "in_layers.0",
+                "in_layers.2",
+                "emb_layers.1",
+                "out_layers.0",
+                "out_layers.3",
+                "skip_connection",
+            ),
+        )
+        mock_transformer.assert_called_once_with(model, "block.1")
+
+    @patch("pydiffuse.unet._get_numbers")
+    @patch("pydiffuse.unet._get_layer")
+    @patch("pydiffuse.unet._get_layers")
+    @patch("pydiffuse.unet._get_transformer_tensors")
+    def test_get_block_tensors_unrecognised_part(
+        self, mock_transformer, mock_layers, mock_layer, mock_numbers
+    ):
+        model = MagicMock()
+        model.keys.return_value = [
+            "block.0.in_layers.2.weight",
+            "block.1.unknown.weight",
+        ]
+        mock_numbers.return_value = [0, 1]
+        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
+        with self.assertRaises(ValueError) as context:
+            _get_block_tensors(model, "block")
+        self.assertEqual(
+            str(context.exception), "Unrecognised UNet block part: block.1"
+        )
+        mock_numbers.assert_called_once_with(model, "block")
+        mock_layer.assert_not_called()
+        mock_transformer.assert_not_called()
 
 
 class GetLayersTests(TestCase):
