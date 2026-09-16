@@ -28,6 +28,187 @@ class NoiseTestCase(TestCase):
         )
 
 
+class CreateTestCase(NoiseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.model_path = Path(__file__).parent / "models" / "vae_model.safetensors"
+
+    def run_command(self, *args, **kwargs):
+        return super().run_command("create", *args, **kwargs)
+
+    def check_latent(self, latent, shape):
+        # The noise is unit random noise of the latent's shape
+        self.assertEqual(latent.shape, shape)
+        self.assertEqual(latent.dtype, torch.float32)
+        self.assertAlmostEqual(latent.mean().item(), 0, delta=0.1)
+        self.assertAlmostEqual(latent.var().item(), 1, delta=0.1)
+
+    def test_create_latent(self):
+        # Run the command with only the required arguments
+        result = self.run_command("100", "74", self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "latent.pt").exists())
+
+        # Latent is correct
+        with open(self.test_dir / "latent.pt", "rb") as f:
+            latent = torch.load(f)
+        self.check_latent(latent, (4, 37, 50))
+
+    def test_create_latent_with_uneven_size(self):
+        # Run the command with a size that isn't a multiple of the downscale ratio
+        result = self.run_command("101", "75", self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "latent.pt").exists())
+
+        # Latent is rounded down to the same size as an even one
+        with open(self.test_dir / "latent.pt", "rb") as f:
+            latent = torch.load(f)
+        self.check_latent(latent, (4, 37, 50))
+
+    def test_can_set_output_path(self):
+        # Run the command with a custom output path
+        output_path = self.test_dir / "custom_latent.pt"
+        result = self.run_command("100", "74", self.model_path, output=output_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created (in correct place)
+        self.assertTrue(output_path.exists())
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+        # Latent is correct
+        with open(output_path, "rb") as f:
+            latent = torch.load(f)
+        self.check_latent(latent, (4, 37, 50))
+
+    def test_width_is_required(self):
+        # Run the command with no width
+        result = self.run_command()
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'WIDTH'", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_width_must_be_an_integer(self):
+        # Run the command with a non-integer width
+        result = self.run_command("100.5", "74", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("'100.5' is not a valid integer", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_width_must_be_positive(self):
+        # Run the command with a width of zero
+        result = self.run_command("0", "74", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("0 is not in the range x>=1", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_height_is_required(self):
+        # Run the command with no height
+        result = self.run_command("100")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'HEIGHT'", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_height_must_be_an_integer(self):
+        # Run the command with a non-integer height
+        result = self.run_command("100", "74.5", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("'74.5' is not a valid integer", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_height_must_be_positive(self):
+        # Run the command with a height of zero
+        result = self.run_command("100", "0", self.model_path)
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("0 is not in the range x>=1", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_model_is_required(self):
+        # Run the command with no model path
+        result = self.run_command("100", "74")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Missing argument 'MODEL'", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_model_location_must_exist(self):
+        # Run the command with an invalid model path
+        result = self.run_command("100", "74", "/no/such/path/model.safetensors")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "File '/no/such/path/model.safetensors' does not exist", result.stderr
+        )
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_output_location_must_exist(self):
+        # Run the command with an invalid output path
+        result = self.run_command(
+            "100", "74", self.model_path, output="/no/such/path/latent.pt"
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+
 class ApplyTestCase(NoiseTestCase):
     def setUp(self):
         super().setUp()

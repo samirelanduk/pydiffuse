@@ -10,7 +10,12 @@ from transformers import CLIPTokenizer
 from pydiffuse.clip import embed as clip_embed
 from pydiffuse.clip import encode as clip_encode
 from pydiffuse.clip import tokenize as clip_tokenize
-from pydiffuse.noise import exponential_schedule, karras_schedule, noise_tensor
+from pydiffuse.noise import (
+    create_noise,
+    exponential_schedule,
+    karras_schedule,
+    noise_tensor,
+)
 from pydiffuse.sample import sample_euler, sample_heun
 from pydiffuse.unet import unet as unet_predict
 from pydiffuse.vae import decode as vae_decode
@@ -168,6 +173,25 @@ def decode_latent(latent, model, image):
     with safe_open(model, framework="pt", device="cpu") as tensors:
         image_obj = vae_decode(latent_tensor, tensors)
     image_obj.save(image)
+
+
+@noise.command("create")
+@click.argument("width", type=click.IntRange(1))
+@click.argument("height", type=click.IntRange(1))
+@click.argument("model", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, writable=True),
+    callback=check_parent,
+    default="latent.pt",
+    help="Path to save the latent to.",
+)
+def create_latent(width, height, model, output):
+    """Creates a latent of pure noise for an image of the given size."""
+
+    with safe_open(model, framework="pt", device="cpu") as tensors:
+        latent_tensor = create_noise(width, height, tensors)
+    torch.save(latent_tensor, output)
 
 
 @noise.command("apply")
