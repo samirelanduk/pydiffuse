@@ -11,6 +11,7 @@ from pydiffuse.unet import (
     _feed_forward,
     _get_block_tensors,
     _get_layers,
+    _get_numbers,
     _get_transformer_tensors,
     _input_blocks,
     _noise_level_to_embedding,
@@ -24,6 +25,39 @@ from pydiffuse.unet import (
     _transformer_block,
     _upsample,
 )
+
+
+class GetNumbersTests(TestCase):
+    def test_get_numbers(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "model.diffusion_model.input_blocks.0.0.weight",
+            "model.diffusion_model.input_blocks.1.0.in_layers.0.weight",
+            "model.diffusion_model.input_blocks.1.1.proj_in.weight",
+            "model.diffusion_model.input_blocks.11.0.out_layers.3.bias",
+            "model.diffusion_model.input_blocks.2.0.op.weight",
+            "model.diffusion_model.input_blocks.x.0.weight",
+            "model.diffusion_model.middle_block.0.in_layers.0.weight",
+            "model.diffusion_model.output_blocks.3.0.skip_connection.weight",
+            "xxx",
+        ]
+        result = _get_numbers(model, "model.diffusion_model.input_blocks")
+        self.assertEqual(result, [0, 1, 2, 11])
+
+    def test_get_numbers_of_parts(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "model.diffusion_model.input_blocks.1.0.in_layers.0.weight",
+            "model.diffusion_model.input_blocks.1.1.proj_in.weight",
+            "model.diffusion_model.input_blocks.1.1.transformer_blocks.3.norm1.bias",
+            "model.diffusion_model.input_blocks.10.2.op.weight",
+            "model.diffusion_model.input_blocks.1.x.weight",
+            "model.diffusion_model.output_blocks.1.4.conv.weight",
+            "other.model.diffusion_model.input_blocks.1.5.weight",
+            "xxx",
+        ]
+        result = _get_numbers(model, "model.diffusion_model.input_blocks.1")
+        self.assertEqual(result, [0, 1])
 
 
 class GetBlockTensorsTests(TestCase):
