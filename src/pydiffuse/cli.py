@@ -61,6 +61,26 @@ def check_parent(ctx, param, value):
     return value
 
 
+def check_schedule(ctx, param, value):
+    """Reads a noise schedule file, rejecting it unless it has at least two
+    noise levels which are each at least 0 and below 1."""
+
+    with open(value) as f:
+        lines = f.read().splitlines()
+    levels = []
+    for line in lines:
+        try:
+            level = float(line)
+        except ValueError:
+            raise click.BadParameter(f"'{line}' is not a valid noise level.")
+        if not 0 <= level < 1:
+            raise click.BadParameter(f"{level} is not in the range 0<=x<1.")
+        levels.append(level)
+    if len(levels) < 2:
+        raise click.BadParameter("A schedule must have at least two noise levels.")
+    return levels
+
+
 @clip.command()
 @click.argument("text")
 @click.option(
@@ -263,7 +283,9 @@ def predict_noise(latent, noise_level, conditioning, model, noise):
 @click.argument("latent", type=click.Path(exists=True, dir_okay=False))
 @click.argument("positive", type=click.Path(exists=True, dir_okay=False))
 @click.argument("negative", type=click.Path(exists=True, dir_okay=False))
-@click.argument("schedule", type=click.Path(exists=True, dir_okay=False))
+@click.argument(
+    "schedule", type=click.Path(exists=True, dir_okay=False), callback=check_schedule
+)
 @click.argument("model", type=click.Path(exists=True, dir_okay=False))
 @click.option(
     "--cfg",
@@ -294,11 +316,9 @@ def denoise_latent(latent, positive, negative, schedule, model, cfg, algorithm, 
     latent_tensor = torch.load(latent)
     positive_tensor = torch.load(positive)
     negative_tensor = torch.load(negative)
-    with open(schedule) as f:
-        levels = [float(line) for line in f.read().splitlines()]
     with safe_open(model, framework="pt", device="cpu") as tensors:
         denoised_tensor = samplers[algorithm](
-            positive_tensor, negative_tensor, latent_tensor, tensors, levels, cfg
+            positive_tensor, negative_tensor, latent_tensor, tensors, schedule, cfg
         )
     torch.save(denoised_tensor, output)
 
