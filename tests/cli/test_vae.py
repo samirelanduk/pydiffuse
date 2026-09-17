@@ -39,15 +39,15 @@ class EncodeTestCase(VaeTestCase):
         return super().run_command("encode", *args, **kwargs)
 
     def check_latent(self, latent):
-        self.assertEqual(latent.shape, (1, 4, 37, 50))
-        self.assertEqual(round(latent[0, 0, 0, 0].item(), 3), -0.033)
-        self.assertEqual(round(latent[0, 0, 0, 49].item(), 3), 0.06)
-        self.assertEqual(round(latent[0, 0, 36, 0].item(), 3), 0.232)
-        self.assertEqual(round(latent[0, 0, 36, 49].item(), 3), 0.099)
-        self.assertEqual(round(latent[0, 3, 0, 0].item(), 3), 0.473)
-        self.assertEqual(round(latent[0, 3, 0, 49].item(), 3), -0.376)
-        self.assertEqual(round(latent[0, 3, 36, 0].item(), 3), -0.062)
-        self.assertEqual(round(latent[0, 3, 36, 49].item(), 3), -0.183)
+        self.assertEqual(latent.shape, (4, 37, 50))
+        self.assertEqual(round(latent[0, 0, 0].item(), 3), 0.044)
+        self.assertEqual(round(latent[0, 0, 49].item(), 3), -0.001)
+        self.assertEqual(round(latent[0, 36, 0].item(), 3), 0.038)
+        self.assertEqual(round(latent[0, 36, 49].item(), 3), 0.007)
+        self.assertEqual(round(latent[3, 0, 0].item(), 3), 0.044)
+        self.assertEqual(round(latent[3, 0, 49].item(), 3), -0.082)
+        self.assertEqual(round(latent[3, 36, 0].item(), 3), 0.003)
+        self.assertEqual(round(latent[3, 36, 49].item(), 3), -0.023)
 
     def test_encode_image(self):
         # Run the command with only the required arguments
@@ -162,8 +162,8 @@ class DecodeTestCase(VaeTestCase):
     def check_image(self, image):
         self.assertEqual(image.size, (100, 74))
         self.assertEqual(image.mode, "RGB")
-        self.assertEqual(image.getpixel((0, 0)), (136, 107, 161))
-        self.assertEqual(image.getpixel((99, 73)), (143, 112, 128))
+        self.assertEqual(image.getpixel((0, 0)), (117, 150, 141))
+        self.assertEqual(image.getpixel((99, 73)), (152, 135, 117))
 
     def test_decode_latent(self):
         # Run the command with only the required arguments
