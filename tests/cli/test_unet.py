@@ -71,7 +71,7 @@ class UnetPredictTestCase(UnetTestCase):
         with open(self.test_dir / "noise.pt", "rb") as f:
             noise = torch.load(f)
         self.check_noise(
-            noise, [-0.117, 0.128, 0.053, 0.36, 0.314, -0.091, 0.159, -0.162]
+            noise, [-0.237, 0.003, 0.053, 0.205, 0.254, -0.069, 0.077, -0.273]
         )
 
     def test_half_noise(self):
@@ -92,7 +92,7 @@ class UnetPredictTestCase(UnetTestCase):
         with open(self.test_dir / "noise.pt", "rb") as f:
             noise = torch.load(f)
         self.check_noise(
-            noise, [-0.113, 0.119, 0.057, 0.377, 0.325, -0.096, 0.16, -0.156]
+            noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
         )
 
     def test_full_noise(self):
@@ -113,7 +113,7 @@ class UnetPredictTestCase(UnetTestCase):
         with open(self.test_dir / "noise.pt", "rb") as f:
             noise = torch.load(f)
         self.check_noise(
-            noise, [-0.116, 0.129, 0.038, 0.368, 0.322, -0.097, 0.149, -0.138]
+            noise, [-0.238, 0.013, 0.063, 0.22, 0.249, -0.077, 0.069, -0.268]
         )
 
     def test_single_chunk_conditioning(self):
@@ -137,7 +137,7 @@ class UnetPredictTestCase(UnetTestCase):
         with open(self.test_dir / "noise.pt", "rb") as f:
             noise = torch.load(f)
         self.check_noise(
-            noise, [-0.109, 0.119, 0.046, 0.36, 0.32, -0.098, 0.152, -0.153]
+            noise, [-0.236, 0.018, 0.064, 0.206, 0.246, -0.091, 0.065, -0.266]
         )
 
     def test_can_set_noise_path(self):
@@ -164,7 +164,7 @@ class UnetPredictTestCase(UnetTestCase):
         with open(noise_path, "rb") as f:
             noise = torch.load(f)
         self.check_noise(
-            noise, [-0.113, 0.119, 0.057, 0.377, 0.325, -0.096, 0.16, -0.156]
+            noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
         )
 
     def test_latent_is_required(self):

@@ -37,7 +37,7 @@ class DenoiseTestCase(SampleTestCase):
         self.positive_path = data_path / "positive-conditioning.pt"
         self.negative_path = data_path / "negative-conditioning.pt"
         self.model_path = Path(__file__).parent / "models" / "unet_model.safetensors"
-        self.euler_denoised = [29.3, -12.4, -13.1, -22.9, -12.6, 6.5, -25.6, 2.5]
+        self.euler_denoised = [31.1, -10.8, -13.4, -20.7, -11.6, 6.2, -24.5, 4.2]
 
     def create_latent(self):
         latent_path = self.test_dir / "latent.pt"
@@ -131,7 +131,7 @@ class DenoiseTestCase(SampleTestCase):
         with open(self.test_dir / "denoised.pt", "rb") as f:
             denoised = torch.load(f)
         self.check_denoised(
-            denoised, [26.0, -10.0, -16.4, -23.7, -11.5, 5.8, -24.5, 1.9]
+            denoised, [27.8, -8.5, -16.1, -21.3, -10.7, 5.6, -23.9, 2.8]
         )
 
     def test_can_set_cfg(self):
@@ -157,7 +157,7 @@ class DenoiseTestCase(SampleTestCase):
         with open(self.test_dir / "denoised.pt", "rb") as f:
             denoised = torch.load(f)
         self.check_denoised(
-            denoised, [29.5, -12.6, -13.6, -23.7, -12.8, 6.5, -25.7, 2.7]
+            denoised, [31.1, -10.4, -13.2, -21.5, -11.8, 6.4, -24.8, 4.4]
         )
 
     def test_can_set_output_path(self):

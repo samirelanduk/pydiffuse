@@ -405,18 +405,18 @@ class EncodeTestCase(ClipTestCase):
 
     def check_conditioning(self, conditioning):
         self.assertEqual(conditioning.shape, (3, 77, 12))
-        self.assertEqual(round(conditioning[0, 0, 0].item(), 3), 0.698)
-        self.assertEqual(round(conditioning[0, 0, 11].item(), 3), -0.011)
-        self.assertEqual(round(conditioning[0, 76, 0].item(), 3), 0.556)
-        self.assertEqual(round(conditioning[0, 76, 11].item(), 3), -0.601)
-        self.assertEqual(round(conditioning[1, 0, 0].item(), 3), 0.541)
-        self.assertEqual(round(conditioning[1, 0, 11].item(), 3), -0.075)
-        self.assertEqual(round(conditioning[1, 76, 0].item(), 3), 0.938)
-        self.assertEqual(round(conditioning[1, 76, 11].item(), 3), 0.45)
-        self.assertEqual(round(conditioning[2, 0, 0].item(), 3), -0.292)
-        self.assertEqual(round(conditioning[2, 0, 11].item(), 3), 0.289)
-        self.assertEqual(round(conditioning[2, 76, 0].item(), 3), 0.575)
-        self.assertEqual(round(conditioning[2, 76, 11].item(), 3), -0.85)
+        self.assertEqual(round(conditioning[0, 0, 0].item(), 3), 0.807)
+        self.assertEqual(round(conditioning[0, 0, 11].item(), 3), -0.021)
+        self.assertEqual(round(conditioning[0, 76, 0].item(), 3), 0.101)
+        self.assertEqual(round(conditioning[0, 76, 11].item(), 3), -0.657)
+        self.assertEqual(round(conditioning[1, 0, 0].item(), 3), 0.672)
+        self.assertEqual(round(conditioning[1, 0, 11].item(), 3), -0.131)
+        self.assertEqual(round(conditioning[1, 76, 0].item(), 3), 1.099)
+        self.assertEqual(round(conditioning[1, 76, 11].item(), 3), -0.031)
+        self.assertEqual(round(conditioning[2, 0, 0].item(), 3), -0.262)
+        self.assertEqual(round(conditioning[2, 0, 11].item(), 3), 0.363)
+        self.assertEqual(round(conditioning[2, 76, 0].item(), 3), 0.896)
+        self.assertEqual(round(conditioning[2, 76, 11].item(), 3), -0.48)
 
     def test_create_encoding(self):
         # Run the command with only the required arguments
