@@ -265,13 +265,10 @@ class TokenizeTestCase(ClipTestCase):
 class EmbedTestCase(ClipTestCase):
     def setUp(self):
         super().setUp()
-        self.model_path = (
-            Path(__file__).parent / "models" / "clip_embedding_model.safetensors"
-        )
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
 
     def create_tokens(self):
-        """Create a token file input that uses the same small vocab used in the
-        toy test model."""
+        """Create a token file input that uses the first 100 token IDs."""
 
         tokens = [
             list(range(77)),
@@ -422,9 +419,7 @@ class EncodeTestCase(ClipTestCase):
     def setUp(self):
         super().setUp()
         self.embedding_path = Path(__file__).parent / "data" / "embedding.pt"
-        self.model_path = (
-            Path(__file__).parent / "models" / "clip_encode_model.safetensors"
-        )
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
 
     def run_command(self, *args, **kwargs):
         return super().run_command("encode", *args, **kwargs)

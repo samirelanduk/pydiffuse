@@ -31,7 +31,7 @@ class NoiseTestCase(TestCase):
 class CreateTestCase(NoiseTestCase):
     def setUp(self):
         super().setUp()
-        self.model_path = Path(__file__).parent / "models" / "vae_model.safetensors"
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
 
     def run_command(self, *args, **kwargs):
         return super().run_command("create", *args, **kwargs)
@@ -45,7 +45,7 @@ class CreateTestCase(NoiseTestCase):
 
     def test_create_latent(self):
         # Run the command with only the required arguments
-        result = self.run_command("100", "74", self.model_path)
+        result = self.run_command("400", "296", self.model_path)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -62,7 +62,7 @@ class CreateTestCase(NoiseTestCase):
 
     def test_create_latent_with_uneven_size(self):
         # Run the command with a size that isn't a multiple of the downscale ratio
-        result = self.run_command("101", "75", self.model_path)
+        result = self.run_command("401", "303", self.model_path)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)
@@ -80,7 +80,7 @@ class CreateTestCase(NoiseTestCase):
     def test_can_set_output_path(self):
         # Run the command with a custom output path
         output_path = self.test_dir / "custom_latent.pt"
-        result = self.run_command("100", "74", self.model_path, output=output_path)
+        result = self.run_command("400", "296", self.model_path, output=output_path)
 
         # Process ran successfully
         self.assertEqual(result.returncode, 0)

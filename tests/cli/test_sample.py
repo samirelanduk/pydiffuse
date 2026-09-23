@@ -36,7 +36,7 @@ class DenoiseTestCase(SampleTestCase):
         data_path = Path(__file__).parent / "data"
         self.positive_path = data_path / "positive-conditioning.pt"
         self.negative_path = data_path / "negative-conditioning.pt"
-        self.model_path = Path(__file__).parent / "models" / "unet_model.safetensors"
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
         self.euler_denoised = [31.1, -10.8, -13.4, -20.7, -11.6, 6.2, -24.5, 4.2]
 
     def create_latent(self):
