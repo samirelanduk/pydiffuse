@@ -73,13 +73,15 @@ def _break_up_tokens(
     max_length: int = MAX_LENGTH,
 ) -> list[list[int]]:
     """Breaks a list of tokens into a list of lists of tokens, where each
-    sublist is of length max_length, and the start and end tokens are added."""
+    sublist is of length max_length, and the start and end tokens are added. An
+    empty list of tokens gives one sublist of the start token and padding."""
 
     bos = clip_tokenizer.bos_token_id
     eos = clip_tokenizer.eos_token_id
     pad = clip_tokenizer.pad_token_id
     token_lists = [
-        tokens[i : i + max_length - 2] for i in range(0, len(tokens), max_length - 2)
+        tokens[i : i + max_length - 2]
+        for i in range(0, max(len(tokens), 1), max_length - 2)
     ]
     token_lists = [[bos] + t + [eos] for t in token_lists]
     if len(token_lists[-1]) < max_length:
