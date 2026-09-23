@@ -35,7 +35,7 @@ class UnetPredictTestCase(UnetTestCase):
         data_path = Path(__file__).parent / "data"
         self.multi_chunk_conditioning_path = data_path / "positive-conditioning.pt"
         self.single_chunk_conditioning_path = data_path / "negative-conditioning.pt"
-        self.model_path = Path(__file__).parent / "models" / "unet_model.safetensors"
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
 
     def create_latent(self):
         latent_path = self.test_dir / "latent.pt"

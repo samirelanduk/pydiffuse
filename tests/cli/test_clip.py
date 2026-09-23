@@ -160,6 +160,32 @@ class TokenizeTestCase(ClipTestCase):
             mappings = json.load(f)
         self.assertEqual(mappings, expected_mappings)
 
+    def test_can_tokenize_empty_prompt(self):
+        # Run the command with an empty prompt
+        result = self.run_command("")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # Files are created
+        self.assertTrue((self.test_dir / "tokens.json").exists())
+        self.assertTrue((self.test_dir / "mappings.json").exists())
+
+        # Tokens are a single chunk of the start token and padding
+        with open(self.test_dir / "tokens.json") as f:
+            tokens = json.load(f)
+        self.assertEqual(tokens, [[49406] + [49407] * 76])
+
+        # Mappings are correct
+        with open(self.test_dir / "mappings.json") as f:
+            mappings = json.load(f)
+        self.assertEqual(
+            mappings,
+            [[["<|startoftext|>", 49406]] + [["<|endoftext|>", 49407]] * 76],
+        )
+
     def test_prompt_is_required(self):
         # Run the command with no arguments
         result = self.run_command()
@@ -239,13 +265,10 @@ class TokenizeTestCase(ClipTestCase):
 class EmbedTestCase(ClipTestCase):
     def setUp(self):
         super().setUp()
-        self.model_path = (
-            Path(__file__).parent / "models" / "clip_embedding_model.safetensors"
-        )
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
 
     def create_tokens(self):
-        """Create a token file input that uses the same small vocab used in the
-        toy test model."""
+        """Create a token file input that uses the first 100 token IDs."""
 
         tokens = [
             list(range(77)),
@@ -396,9 +419,7 @@ class EncodeTestCase(ClipTestCase):
     def setUp(self):
         super().setUp()
         self.embedding_path = Path(__file__).parent / "data" / "embedding.pt"
-        self.model_path = (
-            Path(__file__).parent / "models" / "clip_encode_model.safetensors"
-        )
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
 
     def run_command(self, *args, **kwargs):
         return super().run_command("encode", *args, **kwargs)

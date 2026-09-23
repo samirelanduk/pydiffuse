@@ -33,21 +33,21 @@ class EncodeTestCase(VaeTestCase):
     def setUp(self):
         super().setUp()
         self.image_path = Path(__file__).parent / "data" / "small-flower.jpg"
-        self.model_path = Path(__file__).parent / "models" / "vae_model.safetensors"
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
 
     def run_command(self, *args, **kwargs):
         return super().run_command("encode", *args, **kwargs)
 
     def check_latent(self, latent):
-        self.assertEqual(latent.shape, (4, 37, 50))
-        self.assertEqual(round(latent[0, 0, 0].item(), 3), 0.044)
-        self.assertEqual(round(latent[0, 0, 49].item(), 3), -0.001)
-        self.assertEqual(round(latent[0, 36, 0].item(), 3), 0.038)
-        self.assertEqual(round(latent[0, 36, 49].item(), 3), 0.007)
-        self.assertEqual(round(latent[3, 0, 0].item(), 3), 0.044)
-        self.assertEqual(round(latent[3, 0, 49].item(), 3), -0.082)
-        self.assertEqual(round(latent[3, 36, 0].item(), 3), 0.003)
-        self.assertEqual(round(latent[3, 36, 49].item(), 3), -0.023)
+        self.assertEqual(latent.shape, (4, 9, 12))
+        self.assertEqual(round(latent[0, 0, 0].item(), 3), -0.017)
+        self.assertEqual(round(latent[0, 0, 11].item(), 3), -0.015)
+        self.assertEqual(round(latent[0, 8, 0].item(), 3), -0.047)
+        self.assertEqual(round(latent[0, 8, 11].item(), 3), 0.006)
+        self.assertEqual(round(latent[3, 0, 0].item(), 3), -0.018)
+        self.assertEqual(round(latent[3, 0, 11].item(), 3), 0.046)
+        self.assertEqual(round(latent[3, 8, 0].item(), 3), 0.046)
+        self.assertEqual(round(latent[3, 8, 11].item(), 3), 0.043)
 
     def test_encode_image(self):
         # Run the command with only the required arguments
@@ -154,16 +154,16 @@ class DecodeTestCase(VaeTestCase):
     def setUp(self):
         super().setUp()
         self.latent_path = Path(__file__).parent / "data" / "small-flower.pt"
-        self.model_path = Path(__file__).parent / "models" / "vae_model.safetensors"
+        self.model_path = Path(__file__).parent / "models" / "sd15.safetensors"
 
     def run_command(self, *args, **kwargs):
         return super().run_command("decode", *args, **kwargs)
 
     def check_image(self, image):
-        self.assertEqual(image.size, (100, 74))
+        self.assertEqual(image.size, (96, 72))
         self.assertEqual(image.mode, "RGB")
-        self.assertEqual(image.getpixel((0, 0)), (117, 150, 141))
-        self.assertEqual(image.getpixel((99, 73)), (152, 135, 117))
+        self.assertEqual(image.getpixel((0, 0)), (102, 81, 98))
+        self.assertEqual(image.getpixel((95, 71)), (113, 91, 130))
 
     def test_decode_latent(self):
         # Run the command with only the required arguments

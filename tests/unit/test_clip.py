@@ -211,6 +211,13 @@ class BreakUpTokensTests(TestCase):
             ],
         )
 
+    def test_empty_list(self):
+        tokenizer = CLIPTokenizer.from_pretrained(TOKENIZER_DIR)
+        result = _break_up_tokens([], tokenizer, max_length=8)
+        self.assertEqual(
+            result, [[49406, 49407, 49407, 49407, 49407, 49407, 49407, 49407]]
+        )
+
 
 class CreateTokenStringMappingTests(TestCase):
     def test_map_tokens_to_strings_single_list(self):
