@@ -27,12 +27,16 @@ def tokenize(
     return tokens, mappings
 
 
-def embed(tokens: list[list[int]], model: safetensors.safe_open) -> torch.Tensor:
+def embed(
+    tokens: list[list[int]],
+    model: safetensors.safe_open,
+    device: str | torch.device = "cpu",
+) -> torch.Tensor:
     """Takes a set of tokens and maps them to the correct embedding vectors for
     this model. The model should contain the two relevant tensors, and match the
     CLIP dictionary used during tokenization."""
 
-    tokens_tensor = torch.tensor(tokens)
+    tokens_tensor = torch.tensor(tokens, device=device)
     token_vectors = _create_token_embedding(model, tokens_tensor)
     position_vectors = _create_position_embedding(model, tokens_tensor)
     return token_vectors + position_vectors

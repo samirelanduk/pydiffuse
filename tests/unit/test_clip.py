@@ -85,8 +85,8 @@ class EmbedTests(TestCase):
     def test_embed(self, mock_position, mock_token):
         tokens = [[0, 1, 2], [3, 4, 5]]
         model = Mock(safetensors.safe_open)
-        mock_token.return_value = [10, 20]
-        mock_position.return_value = [30, 40]
+        mock_token.return_value = torch.tensor([10, 20])
+        mock_position.return_value = torch.tensor([30, 40])
         result = embed(tokens, model)
         self.assertEqual(mock_token.call_count, 1)
         self.assertEqual(mock_token.call_args_list[0][0][0], model)
@@ -98,7 +98,27 @@ class EmbedTests(TestCase):
         self.assertTrue(
             torch.equal(mock_position.call_args_list[0][0][1], torch.tensor(tokens))
         )
-        self.assertEqual(result, [10, 20, 30, 40])
+        self.assertEqual(mock_token.call_args_list[0][0][1].device.type, "cpu")
+        self.assertEqual(mock_position.call_args_list[0][0][1].device.type, "cpu")
+        self.assertTrue(torch.equal(result, torch.tensor([40, 60])))
+
+    @patch("pydiffuse.clip._create_token_embedding")
+    @patch("pydiffuse.clip._create_position_embedding")
+    def test_embed_on_device(self, mock_position, mock_token):
+        tokens = [[0, 1, 2], [3, 4, 5]]
+        model = Mock(safetensors.safe_open)
+        mock_token.return_value = torch.tensor([10, 20])
+        mock_position.return_value = torch.tensor([30, 40])
+        result = embed(tokens, model, device="meta")
+        self.assertEqual(mock_token.call_count, 1)
+        self.assertEqual(mock_token.call_args_list[0][0][0], model)
+        self.assertEqual(mock_token.call_args_list[0][0][1].shape, (2, 3))
+        self.assertEqual(mock_position.call_count, 1)
+        self.assertEqual(mock_position.call_args_list[0][0][0], model)
+        self.assertEqual(mock_position.call_args_list[0][0][1].shape, (2, 3))
+        self.assertEqual(mock_token.call_args_list[0][0][1].device.type, "meta")
+        self.assertEqual(mock_position.call_args_list[0][0][1].device.type, "meta")
+        self.assertTrue(torch.equal(result, torch.tensor([40, 60])))
 
 
 class EncodeTests(TestCase):
