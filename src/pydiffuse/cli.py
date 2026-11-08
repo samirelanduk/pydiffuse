@@ -61,6 +61,21 @@ def check_parent(ctx, param, value):
     return value
 
 
+def check_device(ctx, param, value):
+    """Rejects a device that torch doesn't recognise, or that isn't available on
+    this machine."""
+
+    try:
+        device = torch.device(value)
+    except RuntimeError:
+        raise click.BadParameter(f"'{value}' is not a valid device.")
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise click.BadParameter("CUDA is not available on this machine.")
+    if device.type == "mps" and not torch.backends.mps.is_available():
+        raise click.BadParameter("MPS is not available on this machine.")
+    return device
+
+
 def check_schedule(ctx, param, value):
     """Reads a noise schedule file, rejecting it unless it has at least two
     noise levels which are each at least 0 and below 1."""
@@ -129,14 +144,20 @@ def tokenize(text, tokens, mappings, tokenizer):
     default="embedding.pt",
     help="Path to save the embedding to.",
 )
-def embed(tokens, model, embedding):
+@click.option(
+    "--device",
+    callback=check_device,
+    default="cpu",
+    help="Device to compute the embedding on, such as cpu, cuda or mps.",
+)
+def embed(tokens, model, embedding, device):
     """Embeds tokens using CLIP embedding weights from a model."""
 
     with open(tokens) as f:
         token_lists = json.load(f)
     with safe_open(model, framework="pt", device="cpu") as tensors:
-        embedding_tensor = clip_embed(token_lists, tensors)
-    torch.save(embedding_tensor, embedding)
+        embedding_tensor = clip_embed(token_lists, tensors, device=device)
+    torch.save(embedding_tensor.cpu(), embedding)
 
 
 @clip.command("encode")
