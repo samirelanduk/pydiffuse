@@ -116,7 +116,7 @@ def _create_token_embedding(
     keys = tensors.keys()
     for key in keys:
         if key.endswith("token_embedding.weight"):
-            tensor = tensors.get_tensor(key)
+            tensor = tensors.get_tensor(key).to(tokens_tensor.device)
             token_embedding = torch.nn.Embedding(
                 num_embeddings=tensor.shape[0], embedding_dim=tensor.shape[1]
             ).from_pretrained(tensor)
@@ -134,11 +134,14 @@ def _create_position_embedding(
     keys = tensors.keys()
     for key in keys:
         if key.endswith("position_embedding.weight"):
-            tensor = tensors.get_tensor(key)
+            tensor = tensors.get_tensor(key).to(tokens_tensor.device)
             position_embedding = torch.nn.Embedding(
                 num_embeddings=tensor.shape[0], embedding_dim=tensor.shape[1]
             ).from_pretrained(tensor)
-            return position_embedding(torch.arange(tokens_tensor.shape[1]))
+            positions = torch.arange(
+                tokens_tensor.shape[1], device=tokens_tensor.device
+            )
+            return position_embedding(positions)
     raise ValueError("Position embedding tensor not found in model")
 
 

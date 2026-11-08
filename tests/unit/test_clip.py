@@ -276,6 +276,22 @@ class CreateTokenEmbeddingTests(TestCase):
         expected = torch.tensor([[[1.0, 2.0], [5.0, 6.0], [3.0, 4.0]]])
         self.assertTrue(torch.equal(result, expected))
 
+    def test_creates_token_embedding_on_tokens_device(self):
+        tensors = MagicMock()
+        tensors.keys.return_value = [
+            "1",
+            "2",
+            "xxx.text_model.token_embedding.weight",
+            "3",
+        ]
+        tensors.get_tensor.return_value = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+        )
+        tokens = torch.tensor([[0, 2, 1]], device="meta")
+        result = _create_token_embedding(tensors, tokens)
+        self.assertEqual(result.shape, (1, 3, 2))
+        self.assertEqual(result.device.type, "meta")
+
     def test_raises_if_no_token_embedding(self):
         tensors = MagicMock()
         tensors.keys.return_value = ["something_else.weight"]
@@ -299,6 +315,21 @@ class CreatePositionEmbeddingTests(TestCase):
         result = _create_position_embedding(tensors, tokens)
         expected = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
         self.assertTrue(torch.equal(result, expected))
+
+    def test_creates_position_embedding_on_tokens_device(self):
+        weight = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        tensors = MagicMock()
+        tensors.keys.return_value = [
+            "1",
+            "2",
+            "xxx.text_model.position_embedding.weight",
+            "3",
+        ]
+        tensors.get_tensor.return_value = weight
+        tokens = torch.tensor([[10, 20, 30]], device="meta")
+        result = _create_position_embedding(tensors, tokens)
+        self.assertEqual(result.shape, (3, 2))
+        self.assertEqual(result.device.type, "meta")
 
     def test_raises_if_no_position_embedding(self):
         tensors = MagicMock()
