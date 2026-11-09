@@ -50,11 +50,12 @@ def encode(embedding: torch.Tensor, model: safetensors.safe_open) -> torch.Tenso
 
     conditioning = embedding.float()
     mask = _get_clip_mask(conditioning)
-    layer_tensors = _get_layer_tensors(model)
+    layer_tensors = _get_layer_tensors(model, embedding.device)
     for layer_tensor in layer_tensors.values():
         conditioning = _apply_attention(conditioning, layer_tensor, mask)
         conditioning = _apply_mlp(conditioning, layer_tensor)
-    conditioning = layer_norm(input=conditioning, **_get_norm_tensors(model))
+    norm_tensors = _get_norm_tensors(model, embedding.device)
+    conditioning = layer_norm(input=conditioning, **norm_tensors)
     return conditioning
 
 
@@ -153,11 +154,13 @@ def _get_clip_mask(embedding: torch.Tensor) -> torch.Tensor:
     return torch.full(
         (embedding.shape[1], embedding.shape[1]),
         -torch.finfo(embedding.dtype).max,
-        device="cpu",
+        device=embedding.device,
     ).triu_(1)
 
 
-def _get_layer_tensors(tensors: safetensors.safe_open) -> dict:
+def _get_layer_tensors(
+    tensors: safetensors.safe_open, device: str | torch.device
+) -> dict:
     """Finds the tensors used in CLIP encode's encoder layers."""
 
     layer_numbers = _get_encoder_layer_numbers(tensors)
@@ -190,7 +193,8 @@ def _get_layer_tensors(tensors: safetensors.safe_open) -> dict:
         layer_number = int(layer_number_match.group(1))
         for suffix, name in lookup.items():
             if key.endswith(suffix):
-                layer_tensor[layer_number][name] = tensors.get_tensor(key).float()
+                tensor = tensors.get_tensor(key).to(device).float()
+                layer_tensor[layer_number][name] = tensor
                 break
     for layer_number in layer_numbers:
         for value in lookup.values():
@@ -269,7 +273,9 @@ def _apply_mlp(conditioning: torch.Tensor, layer_tensor: dict) -> torch.Tensor:
     return conditioning + mlp_output
 
 
-def _get_norm_tensors(tensors: safetensors.safe_open) -> dict:
+def _get_norm_tensors(
+    tensors: safetensors.safe_open, device: str | torch.device
+) -> dict:
     """Finds the tensors used in CLIP encode's final normalization stage."""
 
     norm_tensors = {"weight": None, "bias": None}
@@ -285,7 +291,7 @@ def _get_norm_tensors(tensors: safetensors.safe_open) -> dict:
         if not layer_number_match:
             for suffix, name in lookup.items():
                 if key.endswith(suffix):
-                    norm_tensors[name] = tensors.get_tensor(key).float()
+                    norm_tensors[name] = tensors.get_tensor(key).to(device).float()
                     break
     for key, value in norm_tensors.items():
         if value is None:

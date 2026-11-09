@@ -155,7 +155,7 @@ def embed(tokens, model, embedding, device):
 
     with open(tokens) as f:
         token_lists = json.load(f)
-    with safe_open(model, framework="pt", device="cpu") as tensors:
+    with safe_open(model, framework="pt", device=str(device)) as tensors:
         embedding_tensor = clip_embed(token_lists, tensors, device=device)
     torch.save(embedding_tensor.cpu(), embedding)
 
@@ -170,13 +170,19 @@ def embed(tokens, model, embedding, device):
     default="conditioning.pt",
     help="Path to save the conditioning to.",
 )
-def encode(embedding, model, conditioning):
+@click.option(
+    "--device",
+    callback=check_device,
+    default="cpu",
+    help="Device to compute the conditioning on, such as cpu, cuda or mps.",
+)
+def encode(embedding, model, conditioning, device):
     """Encodes embeddings using CLIP encoder weights from a model."""
 
-    embedding_tensor = torch.load(embedding)
-    with safe_open(model, framework="pt", device="cpu") as tensors:
+    embedding_tensor = torch.load(embedding, map_location=device)
+    with safe_open(model, framework="pt", device=str(device)) as tensors:
         conditioning_tensor = clip_encode(embedding_tensor, tensors)
-    torch.save(conditioning_tensor, conditioning)
+    torch.save(conditioning_tensor.cpu(), conditioning)
 
 
 @vae.command("encode")

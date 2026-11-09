@@ -150,7 +150,7 @@ class EncodeTests(TestCase):
         self.assertTrue(
             torch.equal(mock_get_mask.call_args_list[0][0][0], embedding.float())
         )
-        mock_get_layers.assert_called_once_with(model)
+        mock_get_layers.assert_called_once_with(model, torch.device("cpu"))
         self.assertEqual(mock_attention.call_count, 2)
         self.assertTrue(
             torch.equal(mock_attention.call_args_list[0][0][0], embedding.float())
@@ -163,7 +163,58 @@ class EncodeTests(TestCase):
         self.assertEqual(mock_mlp.call_count, 2)
         self.assertEqual(mock_mlp.call_args_list[0][0], ("ATTN0", {"a": 1}))
         self.assertEqual(mock_mlp.call_args_list[1][0], ("ATTN1", {"b": 2}))
-        mock_get_norm.assert_called_once_with(model)
+        mock_get_norm.assert_called_once_with(model, torch.device("cpu"))
+        mock_layer_norm.assert_called_once_with(
+            input="MLP1", weight="NORM_W", bias="NORM_B"
+        )
+        self.assertEqual(result, "CONDITIONING")
+
+    @patch("pydiffuse.clip.layer_norm")
+    @patch("pydiffuse.clip._get_norm_tensors")
+    @patch("pydiffuse.clip._apply_mlp")
+    @patch("pydiffuse.clip._apply_attention")
+    @patch("pydiffuse.clip._get_layer_tensors")
+    @patch("pydiffuse.clip._get_clip_mask")
+    def test_encode_on_device(
+        self,
+        mock_get_mask,
+        mock_get_layers,
+        mock_attention,
+        mock_mlp,
+        mock_get_norm,
+        mock_layer_norm,
+    ):
+        mock_get_mask.return_value = "MASK"
+        mock_get_layers.return_value = {0: {"a": 1}, 1: {"b": 2}}
+        mock_attention.side_effect = ["ATTN0", "ATTN1"]
+        mock_mlp.side_effect = ["MLP0", "MLP1"]
+        mock_get_norm.return_value = {"weight": "NORM_W", "bias": "NORM_B"}
+        mock_layer_norm.return_value = "CONDITIONING"
+        embedding = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=torch.float16, device="meta"
+        )
+        model = Mock(safetensors.safe_open)
+        result = encode(embedding, model)
+        self.assertEqual(mock_get_mask.call_count, 1)
+        mask_input = mock_get_mask.call_args_list[0][0][0]
+        self.assertEqual(mask_input.shape, (2, 2))
+        self.assertEqual(mask_input.dtype, torch.float32)
+        self.assertEqual(mask_input.device.type, "meta")
+        mock_get_layers.assert_called_once_with(model, torch.device("meta"))
+        self.assertEqual(mock_attention.call_count, 2)
+        attention_input = mock_attention.call_args_list[0][0][0]
+        self.assertEqual(attention_input.shape, (2, 2))
+        self.assertEqual(attention_input.dtype, torch.float32)
+        self.assertEqual(attention_input.device.type, "meta")
+        self.assertEqual(mock_attention.call_args_list[0][0][1], {"a": 1})
+        self.assertEqual(mock_attention.call_args_list[0][0][2], "MASK")
+        self.assertEqual(mock_attention.call_args_list[1][0][0], "MLP0")
+        self.assertEqual(mock_attention.call_args_list[1][0][1], {"b": 2})
+        self.assertEqual(mock_attention.call_args_list[1][0][2], "MASK")
+        self.assertEqual(mock_mlp.call_count, 2)
+        self.assertEqual(mock_mlp.call_args_list[0][0], ("ATTN0", {"a": 1}))
+        self.assertEqual(mock_mlp.call_args_list[1][0], ("ATTN1", {"b": 2}))
+        mock_get_norm.assert_called_once_with(model, torch.device("meta"))
         mock_layer_norm.assert_called_once_with(
             input="MLP1", weight="NORM_W", bias="NORM_B"
         )
@@ -346,6 +397,12 @@ class GetClipMaskTests(TestCase):
         minus_inf = torch.finfo(torch.float32).min
         self.assertTrue(torch.equal(mask, torch.tensor([[0.0, minus_inf], [0.0, 0.0]])))
 
+    def test_mask_on_embedding_device(self):
+        embedding = torch.tensor([[1.0, 2.0], [4.0, 5.0]], device="meta")
+        mask = _get_clip_mask(embedding)
+        self.assertEqual(mask.shape, (2, 2))
+        self.assertEqual(mask.device.type, "meta")
+
     def test_dim_3_tensor(self):
         embedding = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         mask = _get_clip_mask(embedding)
@@ -423,7 +480,7 @@ class GetLayerTensorsTests(TestCase):
         tensors.get_tensor.side_effect = lambda key: torch.tensor(
             [len(key), len(key) * 2, len(key) * 3]
         )
-        layer_tensors = _get_layer_tensors(tensors)
+        layer_tensors = _get_layer_tensors(tensors, "cpu")
         for n in layer_tensors:
             for key in layer_tensors[n]:
                 layer_tensors[n][key] = layer_tensors[n][key].tolist()
@@ -488,6 +545,95 @@ class GetLayerTensorsTests(TestCase):
         )
 
     @patch("pydiffuse.clip._get_encoder_layer_numbers")
+    def test_get_layer_tensors_on_device(self, mock_get_layer_numbers):
+        mock_get_layer_numbers.return_value = [3, 4, 5]
+        tensors = MagicMock()
+        tensors.keys.return_value = [
+            "cond_stage_model.layers.3.norm1.weight",
+            "cond_stage_model.layers.3.norm1.bias",
+            "cond_stage_model.layers.3.norm2.weight",
+            "cond_stage_model.layers.3.norm2.bias",
+            "cond_stage_model.layers.3.mlp.fc1.weight",
+            "cond_stage_model.layers.3.mlp.fc1.bias",
+            "cond_stage_model.layers.3.mlp.fc2.weight",
+            "cond_stage_model.layers.3.mlp.fc2.bias",
+            "cond_stage_model.layers.3.attn.q_proj.weight",
+            "cond_stage_model.layers.3.attn.q_proj.bias",
+            "cond_stage_model.layers.3.attn.k_proj.weight",
+            "cond_stage_model.layers.3.attn.k_proj.bias",
+            "cond_stage_model.layers.3.attn.v_proj.weight",
+            "cond_stage_model.layers.3.attn.v_proj.bias",
+            "cond_stage_model.layers.3.attn.out_proj.weight",
+            "cond_stage_model.layers.3.attn.out_proj.bias",
+            "cond_stage_model.layers.4.norm1.weight",
+            "cond_stage_model.layers.4.norm1.bias",
+            "cond_stage_model.layers.4.norm2.weight",
+            "cond_stage_model.layers.4.norm2.bias",
+            "cond_stage_model.layers.4.mlp.fc1.weight",
+            "cond_stage_model.layers.4.mlp.fc1.bias",
+            "cond_stage_model.layers.4.mlp.fc2.weight",
+            "cond_stage_model.layers.4.mlp.fc2.bias",
+            "cond_stage_model.layers.4.attn.q_proj.weight",
+            "cond_stage_model.layers.4.attn.q_proj.bias",
+            "cond_stage_model.layers.4.attn.k_proj.weight",
+            "cond_stage_model.layers.4.attn.k_proj.bias",
+            "cond_stage_model.layers.4.attn.v_proj.weight",
+            "cond_stage_model.layers.4.attn.v_proj.bias",
+            "cond_stage_model.layers.4.attn.out_proj.weight",
+            "cond_stage_model.layers.4.attn.out_proj.bias",
+            "cond_stage_model.layers.5.norm1.weight",
+            "cond_stage_model.layers.5.norm1.bias",
+            "cond_stage_model.layers.5.norm2.weight",
+            "cond_stage_model.layers.5.norm2.bias",
+            "cond_stage_model.layers.5.mlp.fc1.weight",
+            "cond_stage_model.layers.5.mlp.fc1.bias",
+            "cond_stage_model.layers.5.mlp.fc2.weight",
+            "cond_stage_model.layers.5.mlp.fc2.bias",
+            "cond_stage_model.layers.5.attn.q_proj.weight",
+            "cond_stage_model.layers.5.attn.q_proj.bias",
+            "cond_stage_model.layers.5.attn.k_proj.weight",
+            "cond_stage_model.layers.5.attn.k_proj.bias",
+            "cond_stage_model.layers.5.attn.v_proj.weight",
+            "cond_stage_model.layers.5.attn.v_proj.bias",
+            "cond_stage_model.layers.5.attn.out_proj.weight",
+            "cond_stage_model.layers.5.attn.out_proj.bias",
+            "sd_model.layers.10.norm1.bias",
+        ]
+        tensors.get_tensor.side_effect = lambda key: torch.tensor(
+            [len(key), len(key) * 2, len(key) * 3]
+        )
+        layer_tensors = _get_layer_tensors(tensors, "meta")
+        self.assertEqual(sorted(layer_tensors), [3, 4, 5])
+        for n in layer_tensors:
+            self.assertEqual(
+                sorted(layer_tensors[n]),
+                sorted(
+                    [
+                        "norm1_weight",
+                        "norm1_bias",
+                        "norm2_weight",
+                        "norm2_bias",
+                        "mlp1_weight",
+                        "mlp1_bias",
+                        "mlp2_weight",
+                        "mlp2_bias",
+                        "attn_q_weight",
+                        "attn_q_bias",
+                        "attn_k_weight",
+                        "attn_k_bias",
+                        "attn_v_weight",
+                        "attn_v_bias",
+                        "attn_out_weight",
+                        "attn_out_bias",
+                    ]
+                ),
+            )
+            for key in layer_tensors[n]:
+                self.assertEqual(layer_tensors[n][key].shape, (3,))
+                self.assertEqual(layer_tensors[n][key].dtype, torch.float32)
+                self.assertEqual(layer_tensors[n][key].device.type, "meta")
+
+    @patch("pydiffuse.clip._get_encoder_layer_numbers")
     def test_all_layers_must_be_present(self, mock_get_layer_numbers):
         mock_get_layer_numbers.return_value = [3, 4, 5]
         tensors = MagicMock()
@@ -545,7 +691,7 @@ class GetLayerTensorsTests(TestCase):
             [len(key), len(key) * 2, len(key) * 3]
         )
         with self.assertRaises(ValueError) as context:
-            _get_layer_tensors(tensors)
+            _get_layer_tensors(tensors, "cpu")
         self.assertEqual(
             str(context.exception), "Layer 3 mlp2_bias could not be found in the model"
         )
@@ -1035,7 +1181,7 @@ class GetNormTensorsTests(TestCase):
         tensors.get_tensor.side_effect = lambda key: torch.tensor(
             [len(key), len(key) * 2, len(key) * 3]
         )
-        norm_tensors = _get_norm_tensors(tensors)
+        norm_tensors = _get_norm_tensors(tensors, "cpu")
         for k in norm_tensors:
             norm_tensors[k] = norm_tensors[k].tolist()
         self.assertEqual(
@@ -1045,6 +1191,25 @@ class GetNormTensorsTests(TestCase):
                 "bias": [69, 138, 207],
             },
         )
+
+    def test_get_norm_tensors_on_device(self):
+        tensors = MagicMock()
+        tensors.keys.return_value = [
+            "cond_stage_model.transformer.text_model.encoder.final_layer_norm.weight",
+            "cond_stage_model.transformer.text_model.encoder.final_layer_norm.bias",
+            "cond_stage_model.layers.3.norm1.weight",
+            "cond_stage_model.layers.3.norm1.bias",
+            "sd_model.layers.10.norm1.bias",
+        ]
+        tensors.get_tensor.side_effect = lambda key: torch.tensor(
+            [len(key), len(key) * 2, len(key) * 3]
+        )
+        norm_tensors = _get_norm_tensors(tensors, "meta")
+        self.assertEqual(sorted(norm_tensors), ["bias", "weight"])
+        for k in norm_tensors:
+            self.assertEqual(norm_tensors[k].shape, (3,))
+            self.assertEqual(norm_tensors[k].dtype, torch.float32)
+            self.assertEqual(norm_tensors[k].device.type, "meta")
 
     def test_all_norm_tensors_must_be_present(self):
         tensors = MagicMock()
@@ -1058,7 +1223,7 @@ class GetNormTensorsTests(TestCase):
             [len(key), len(key) * 2, len(key) * 3]
         )
         with self.assertRaises(ValueError) as context:
-            _get_norm_tensors(tensors)
+            _get_norm_tensors(tensors, "cpu")
         self.assertEqual(
             str(context.exception), "Final norm bias could not be found in the model"
         )
