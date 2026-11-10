@@ -295,6 +295,59 @@ class DecodeTestCase(VaeTestCase):
         with Image.open(image_path) as image:
             self.check_image(image)
 
+    def test_can_use_cpu_device(self):
+        # Run the command with the cpu device named explicitly
+        image_path = self.test_dir / "image.jpg"
+        result = self.run_command(self.latent_path, self.model_path, device="cpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(image_path.exists())
+
+        # Image is correct
+        with Image.open(image_path) as image:
+            self.check_image(image)
+
+    @skipUnless(torch.backends.mps.is_available(), "MPS is not available")
+    def test_can_use_mps_device(self):
+        # Run the command with the mps device
+        image_path = self.test_dir / "image.jpg"
+        result = self.run_command(self.latent_path, self.model_path, device="mps")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(image_path.exists())
+
+        # Image is correct
+        with Image.open(image_path) as image:
+            self.check_image(image)
+
+    @skipUnless(torch.cuda.is_available(), "CUDA is not available")
+    def test_can_use_cuda_device(self):
+        # Run the command with the cuda device
+        image_path = self.test_dir / "image.jpg"
+        result = self.run_command(self.latent_path, self.model_path, device="cuda")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(image_path.exists())
+
+        # Image is correct
+        with Image.open(image_path) as image:
+            self.check_image(image)
+
     def test_latent_is_required(self):
         # Run the command with no latent path
         result = self.run_command(self.model_path)
@@ -355,6 +408,44 @@ class DecodeTestCase(VaeTestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+    def test_device_must_be_valid(self):
+        # Run the command with a device torch doesn't recognise
+        result = self.run_command(self.latent_path, self.model_path, device="gpu")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("'gpu' is not a valid device", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+    @skipIf(torch.cuda.is_available(), "CUDA is available")
+    def test_cuda_must_be_available(self):
+        # Run the command with cuda on a machine without it
+        result = self.run_command(self.latent_path, self.model_path, device="cuda")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("CUDA is not available on this machine", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+    @skipIf(torch.backends.mps.is_available(), "MPS is available")
+    def test_mps_must_be_available(self):
+        # Run the command with mps on a machine without it
+        result = self.run_command(self.latent_path, self.model_path, device="mps")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("MPS is not available on this machine", result.stderr)
 
         # File is not created
         self.assertFalse((self.test_dir / "image.jpg").exists())

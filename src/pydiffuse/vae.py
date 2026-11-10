@@ -224,7 +224,7 @@ def _tensor_to_image(x: torch.Tensor) -> Image.Image:
     pixels = x.permute(1, 2, 0)
     pixels = ((pixels + 1.0) / 2.0).clamp(0.0, 1.0)
     pixels = (pixels * 255.0).round().to(torch.uint8)
-    return Image.fromarray(pixels.contiguous().numpy(), mode="RGB")
+    return Image.fromarray(pixels.cpu().contiguous().numpy(), mode="RGB")
 
 
 def _encode_down(x: torch.Tensor, down: list[dict]) -> torch.Tensor:
