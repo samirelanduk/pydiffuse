@@ -195,12 +195,18 @@ def encode(embedding, model, conditioning, device):
     default="latent.pt",
     help="Path to save the latent to.",
 )
-def encode_image(image, model, latent):
+@click.option(
+    "--device",
+    callback=check_device,
+    default="cpu",
+    help="Device to compute the latent on, such as cpu, cuda or mps.",
+)
+def encode_image(image, model, latent, device):
     """Encodes an image into a latent using a VAE."""
 
-    with safe_open(model, framework="pt", device="cpu") as tensors:
-        latent_tensor = vae_encode(Image.open(image), tensors)
-    torch.save(latent_tensor, latent)
+    with safe_open(model, framework="pt", device=str(device)) as tensors:
+        latent_tensor = vae_encode(Image.open(image), tensors, device=device)
+    torch.save(latent_tensor.cpu(), latent)
 
 
 @vae.command("decode")

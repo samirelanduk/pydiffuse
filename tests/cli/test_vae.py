@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, skipIf, skipUnless
 
 import torch
 from PIL import Image
@@ -85,6 +85,64 @@ class EncodeTestCase(VaeTestCase):
             latent = torch.load(f)
         self.check_latent(latent)
 
+    def test_can_use_cpu_device(self):
+        # Run the command with the cpu device named explicitly
+        latent_path = self.test_dir / "latent.pt"
+        result = self.run_command(self.image_path, self.model_path, device="cpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(latent_path.exists())
+
+        # Encoding is correct
+        with open(latent_path, "rb") as f:
+            latent = torch.load(f)
+        self.check_latent(latent)
+
+    @skipUnless(torch.backends.mps.is_available(), "MPS is not available")
+    def test_can_use_mps_device(self):
+        # Run the command with the mps device
+        latent_path = self.test_dir / "latent.pt"
+        result = self.run_command(self.image_path, self.model_path, device="mps")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(latent_path.exists())
+
+        # Encoding is correct
+        with open(latent_path, "rb") as f:
+            latent = torch.load(f)
+        self.assertEqual(latent.device.type, "cpu")
+        self.check_latent(latent)
+
+    @skipUnless(torch.cuda.is_available(), "CUDA is not available")
+    def test_can_use_cuda_device(self):
+        # Run the command with the cuda device
+        latent_path = self.test_dir / "latent.pt"
+        result = self.run_command(self.image_path, self.model_path, device="cuda")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(latent_path.exists())
+
+        # Encoding is correct
+        with open(latent_path, "rb") as f:
+            latent = torch.load(f)
+        self.assertEqual(latent.device.type, "cpu")
+        self.check_latent(latent)
+
     def test_image_is_required(self):
         # Run the command with no image path
         result = self.run_command(self.model_path)
@@ -145,6 +203,44 @@ class EncodeTestCase(VaeTestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    def test_device_must_be_valid(self):
+        # Run the command with a device torch doesn't recognise
+        result = self.run_command(self.image_path, self.model_path, device="gpu")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("'gpu' is not a valid device", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    @skipIf(torch.cuda.is_available(), "CUDA is available")
+    def test_cuda_must_be_available(self):
+        # Run the command with cuda on a machine without it
+        result = self.run_command(self.image_path, self.model_path, device="cuda")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("CUDA is not available on this machine", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
+    @skipIf(torch.backends.mps.is_available(), "MPS is available")
+    def test_mps_must_be_available(self):
+        # Run the command with mps on a machine without it
+        result = self.run_command(self.image_path, self.model_path, device="mps")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("MPS is not available on this machine", result.stderr)
 
         # File is not created
         self.assertFalse((self.test_dir / "latent.pt").exists())

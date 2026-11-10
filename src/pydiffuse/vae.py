@@ -22,12 +22,16 @@ NORM_GROUPS = 32
 LATENT_SCALE = 0.18215
 
 
-def encode(image: Image.Image, model: safetensors.safe_open) -> torch.Tensor:
+def encode(
+    image: Image.Image,
+    model: safetensors.safe_open,
+    device: str | torch.device = "cpu",
+) -> torch.Tensor:
     """Encodes an image into latent space using a VAE model."""
 
-    model_tensors = _get_encode_tensors(model)
+    model_tensors = _get_encode_tensors(model, device)
     downscale_ratio = get_downscale_ratio(model)
-    x = _image_to_tensor(image, downscale_ratio)
+    x = _image_to_tensor(image, downscale_ratio, device)
     x = convolution(
         model_tensors["conv_in"]["weight"],
         model_tensors["conv_in"]["bias"],
@@ -49,7 +53,7 @@ def encode(image: Image.Image, model: safetensors.safe_open) -> torch.Tensor:
 def decode(latent: torch.Tensor, model: safetensors.safe_open) -> Image.Image:
     """Decodes a latent tensor into an image using a VAE model."""
 
-    model_tensors = _get_decode_tensors(model)
+    model_tensors = _get_decode_tensors(model, latent.device)
     x = convolution(
         model_tensors["post_quant_conv"]["weight"],
         model_tensors["post_quant_conv"]["bias"],
@@ -89,47 +93,51 @@ def get_latent_channels(model: safetensors.safe_open) -> int:
     return weight.shape[1]
 
 
-def _get_encode_tensors(model: safetensors.safe_open) -> dict:
+def _get_encode_tensors(
+    model: safetensors.safe_open, device: str | torch.device
+) -> dict:
     """Finds the tensors used in VAE encode."""
 
     down = []
     for level in _get_numbers(model, f"{ENCODER_PREFIX}.down"):
         prefix = f"{ENCODER_PREFIX}.down.{level}"
         blocks = [
-            _get_layers(model, f"{prefix}.block.{index}", RESNET_LAYERS)
+            _get_layers(model, f"{prefix}.block.{index}", RESNET_LAYERS, device)
             for index in _get_numbers(model, f"{prefix}.block")
         ]
-        downsample = _get_layer(model, f"{prefix}.downsample.conv")
+        downsample = _get_layer(model, f"{prefix}.downsample.conv", device)
         down.append({"block": blocks, "downsample": downsample})
     return {
-        "conv_in": _get_layer(model, f"{ENCODER_PREFIX}.conv_in"),
+        "conv_in": _get_layer(model, f"{ENCODER_PREFIX}.conv_in", device),
         "down": down,
-        "mid": _get_mid_tensors(model, ENCODER_PREFIX),
-        "norm_out": _get_layer(model, f"{ENCODER_PREFIX}.norm_out"),
-        "conv_out": _get_layer(model, f"{ENCODER_PREFIX}.conv_out"),
-        "quant_conv": _get_layer(model, f"{MODEL_PREFIX}.quant_conv"),
+        "mid": _get_mid_tensors(model, ENCODER_PREFIX, device),
+        "norm_out": _get_layer(model, f"{ENCODER_PREFIX}.norm_out", device),
+        "conv_out": _get_layer(model, f"{ENCODER_PREFIX}.conv_out", device),
+        "quant_conv": _get_layer(model, f"{MODEL_PREFIX}.quant_conv", device),
     }
 
 
-def _get_decode_tensors(model: safetensors.safe_open) -> dict:
+def _get_decode_tensors(
+    model: safetensors.safe_open, device: str | torch.device
+) -> dict:
     """Finds the tensors used in VAE decode."""
 
     up = []
     for level in _get_numbers(model, f"{DECODER_PREFIX}.up"):
         prefix = f"{DECODER_PREFIX}.up.{level}"
         blocks = [
-            _get_layers(model, f"{prefix}.block.{index}", RESNET_LAYERS)
+            _get_layers(model, f"{prefix}.block.{index}", RESNET_LAYERS, device)
             for index in _get_numbers(model, f"{prefix}.block")
         ]
-        upsample = _get_layer(model, f"{prefix}.upsample.conv")
+        upsample = _get_layer(model, f"{prefix}.upsample.conv", device)
         up.append({"block": blocks, "upsample": upsample})
     return {
-        "post_quant_conv": _get_layer(model, f"{MODEL_PREFIX}.post_quant_conv"),
-        "conv_in": _get_layer(model, f"{DECODER_PREFIX}.conv_in"),
-        "mid": _get_mid_tensors(model, DECODER_PREFIX),
+        "post_quant_conv": _get_layer(model, f"{MODEL_PREFIX}.post_quant_conv", device),
+        "conv_in": _get_layer(model, f"{DECODER_PREFIX}.conv_in", device),
+        "mid": _get_mid_tensors(model, DECODER_PREFIX, device),
         "up": up,
-        "norm_out": _get_layer(model, f"{DECODER_PREFIX}.norm_out"),
-        "conv_out": _get_layer(model, f"{DECODER_PREFIX}.conv_out"),
+        "norm_out": _get_layer(model, f"{DECODER_PREFIX}.norm_out", device),
+        "conv_out": _get_layer(model, f"{DECODER_PREFIX}.conv_out", device),
     }
 
 
@@ -149,14 +157,19 @@ def _get_numbers(model: safetensors.safe_open, prefix: str) -> list[int]:
 
 
 def _get_layers(
-    model: safetensors.safe_open, prefix: str, names: tuple[str, ...]
+    model: safetensors.safe_open,
+    prefix: str,
+    names: tuple[str, ...],
+    device: str | torch.device,
 ) -> dict:
     """Gets the weight and bias of each of the given layers under a prefix."""
 
-    return {name: _get_layer(model, f"{prefix}.{name}") for name in names}
+    return {name: _get_layer(model, f"{prefix}.{name}", device) for name in names}
 
 
-def _get_layer(model: safetensors.safe_open, prefix: str) -> dict | None:
+def _get_layer(
+    model: safetensors.safe_open, prefix: str, device: str | torch.device
+) -> dict | None:
     """Gets the weight and bias of a single layer, or None if the model has no
     such layer."""
 
@@ -164,29 +177,33 @@ def _get_layer(model: safetensors.safe_open, prefix: str) -> dict | None:
     if f"{prefix}.weight" not in keys or f"{prefix}.bias" not in keys:
         return None
     return {
-        "weight": model.get_tensor(f"{prefix}.weight").float(),
-        "bias": model.get_tensor(f"{prefix}.bias").float(),
+        "weight": model.get_tensor(f"{prefix}.weight").to(device).float(),
+        "bias": model.get_tensor(f"{prefix}.bias").to(device).float(),
     }
 
 
-def _get_mid_tensors(model: safetensors.safe_open, prefix: str) -> dict:
+def _get_mid_tensors(
+    model: safetensors.safe_open, prefix: str, device: str | torch.device
+) -> dict:
     """Finds the tensors of the residual, attention and residual blocks that sit
     in the middle of both the encoder and the decoder."""
 
     return {
-        "block_1": _get_layers(model, f"{prefix}.mid.block_1", RESNET_LAYERS),
-        "attn_1": _get_layers(model, f"{prefix}.mid.attn_1", ATTENTION_LAYERS),
-        "block_2": _get_layers(model, f"{prefix}.mid.block_2", RESNET_LAYERS),
+        "block_1": _get_layers(model, f"{prefix}.mid.block_1", RESNET_LAYERS, device),
+        "attn_1": _get_layers(model, f"{prefix}.mid.attn_1", ATTENTION_LAYERS, device),
+        "block_2": _get_layers(model, f"{prefix}.mid.block_2", RESNET_LAYERS, device),
     }
 
 
-def _image_to_tensor(image: Image.Image, downscale_ratio: int) -> torch.Tensor:
+def _image_to_tensor(
+    image: Image.Image, downscale_ratio: int, device: str | torch.device
+) -> torch.Tensor:
     """Converts a PIL image into a tensor containing the same pixel information,
     but normalised to the range [-1, 1]."""
 
     rgb = image.convert("RGB")
     width, height = rgb.size
-    pixels = torch.tensor(bytearray(rgb.tobytes()), dtype=torch.float32)
+    pixels = torch.tensor(bytearray(rgb.tobytes()), dtype=torch.float32, device=device)
     pixels = pixels.reshape(height, width, 3)
     pixels = pixels / 255.0 * 2.0 - 1.0
     pixels = pixels.permute(2, 0, 1)
