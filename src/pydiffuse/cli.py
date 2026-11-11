@@ -263,11 +263,18 @@ def create_latent(width, height, model, output):
     default="noised.pt",
     help="Path to save the noised tensor to.",
 )
-def apply_noise(tensor, noise_level, output):
+@click.option(
+    "--device",
+    callback=check_device,
+    default="cpu",
+    help="Device to add the noise on, such as cpu, cuda or mps.",
+)
+def apply_noise(tensor, noise_level, output, device):
     """Adds noise to a tensor at the given noise level."""
 
-    noised_tensor = noise_tensor(torch.load(tensor), noise_level)
-    torch.save(noised_tensor, output)
+    tensor_obj = torch.load(tensor, map_location=device)
+    noised_tensor = noise_tensor(tensor_obj, noise_level)
+    torch.save(noised_tensor.cpu(), output)
 
 
 @noise.command("schedule")
