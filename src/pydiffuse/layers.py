@@ -10,13 +10,7 @@ def linear(
     a 2D tensor of dimensions (output_dim, input_dim), and the bias must be a 1D
     tensor of dimensions (output_dim), or None if the layer has no bias."""
 
-    layer = torch.nn.Linear(
-        weight.shape[1], weight.shape[0], bias=bias is not None, device="cpu"
-    )
-    layer.weight = torch.nn.Parameter(weight, requires_grad=False)
-    if bias is not None:
-        layer.bias = torch.nn.Parameter(bias, requires_grad=False)
-    return layer(input)
+    return torch.nn.functional.linear(input, weight, bias)
 
 
 def group_norm(
@@ -37,12 +31,9 @@ def group_norm(
     The result is a tensor of the same shape as the input."""
 
     groups = 1 if groups is None else groups
-    layer = torch.nn.GroupNorm(
-        num_groups=groups, num_channels=input.shape[0], device="cpu"
-    )
-    layer.weight = torch.nn.Parameter(weight, requires_grad=False)
-    layer.bias = torch.nn.Parameter(bias, requires_grad=False)
-    return layer(input.unsqueeze(0)).squeeze(0)
+    return torch.nn.functional.group_norm(
+        input.unsqueeze(0), groups, weight, bias
+    ).squeeze(0)
 
 
 def layer_norm(
@@ -56,10 +47,7 @@ def layer_norm(
     The weight and bias must be 1D tensors of dimensions (num_features). The
     result is a tensor of the same shape as the input."""
 
-    layer = torch.nn.LayerNorm(weight.shape[0], device="cpu")
-    layer.weight = torch.nn.Parameter(weight, requires_grad=False)
-    layer.bias = torch.nn.Parameter(bias, requires_grad=False)
-    return layer(input)
+    return torch.nn.functional.layer_norm(input, weight.shape, weight, bias)
 
 
 def convolution(
@@ -86,16 +74,9 @@ def convolution(
     if pad_at_end:
         input = torch.nn.functional.pad(input, (0, padding, 0, padding))
         padding = 0
-    layer = torch.nn.Conv2d(
-        in_channels=weight.shape[1],
-        out_channels=weight.shape[0],
-        kernel_size=(weight.shape[2], weight.shape[3]),
-        padding=padding,
-        stride=stride,
+    return torch.nn.functional.conv2d(
+        input, weight, bias, stride=stride, padding=padding
     )
-    layer.weight = torch.nn.Parameter(weight, requires_grad=False)
-    layer.bias = torch.nn.Parameter(bias, requires_grad=False)
-    return layer(input)
 
 
 def silu(input: torch.Tensor) -> torch.Tensor:
