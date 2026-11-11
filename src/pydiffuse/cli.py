@@ -313,16 +313,22 @@ def noise_schedule(steps, algorithm, output):
     default="noise.pt",
     help="Path to save the noise prediction to.",
 )
-def predict_noise(latent, noise_level, conditioning, model, noise):
+@click.option(
+    "--device",
+    callback=check_device,
+    default="cpu",
+    help="Device to predict the noise on, such as cpu, cuda or mps.",
+)
+def predict_noise(latent, noise_level, conditioning, model, noise, device):
     """Predicts the noise in a noised latent using a UNet."""
 
-    latent_tensor = torch.load(latent)
-    conditioning_tensor = torch.load(conditioning)
-    with safe_open(model, framework="pt", device="cpu") as tensors:
+    latent_tensor = torch.load(latent, map_location=device)
+    conditioning_tensor = torch.load(conditioning, map_location=device)
+    with safe_open(model, framework="pt", device=str(device)) as tensors:
         prediction_tensor = unet_predict(
             latent_tensor, noise_level, conditioning_tensor, tensors
         )
-    torch.save(prediction_tensor, noise)
+    torch.save(prediction_tensor.cpu(), noise)
 
 
 @sample.command("denoise")

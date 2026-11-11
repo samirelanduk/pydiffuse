@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, skipIf, skipUnless
 
 import torch
 
@@ -167,6 +167,88 @@ class UnetPredictTestCase(UnetTestCase):
             noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
         )
 
+    def test_can_use_cpu_device(self):
+        # Run the command with the cpu device named explicitly
+        noise_path = self.test_dir / "noise.pt"
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.multi_chunk_conditioning_path,
+            self.model_path,
+            device="cpu",
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(noise_path.exists())
+
+        # Prediction is correct
+        with open(noise_path, "rb") as f:
+            noise = torch.load(f)
+        self.check_noise(
+            noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
+        )
+
+    @skipUnless(torch.backends.mps.is_available(), "MPS is not available")
+    def test_can_use_mps_device(self):
+        # Run the command with the mps device
+        noise_path = self.test_dir / "noise.pt"
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.multi_chunk_conditioning_path,
+            self.model_path,
+            device="mps",
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(noise_path.exists())
+
+        # Prediction is correct
+        with open(noise_path, "rb") as f:
+            noise = torch.load(f)
+        self.assertEqual(noise.device.type, "cpu")
+        self.check_noise(
+            noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
+        )
+
+    @skipUnless(torch.cuda.is_available(), "CUDA is not available")
+    def test_can_use_cuda_device(self):
+        # Run the command with the cuda device
+        noise_path = self.test_dir / "noise.pt"
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.multi_chunk_conditioning_path,
+            self.model_path,
+            device="cuda",
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(noise_path.exists())
+
+        # Prediction is correct
+        with open(noise_path, "rb") as f:
+            noise = torch.load(f)
+        self.assertEqual(noise.device.type, "cpu")
+        self.check_noise(
+            noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
+        )
+
     def test_latent_is_required(self):
         # Run the command with no latent path
         result = self.run_command()
@@ -320,6 +402,62 @@ class UnetPredictTestCase(UnetTestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "noise.pt").exists())
+
+    def test_device_must_be_valid(self):
+        # Run the command with a device torch doesn't recognise
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.multi_chunk_conditioning_path,
+            self.model_path,
+            device="gpu",
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("'gpu' is not a valid device", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "noise.pt").exists())
+
+    @skipIf(torch.cuda.is_available(), "CUDA is available")
+    def test_cuda_must_be_available(self):
+        # Run the command with cuda on a machine without it
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.multi_chunk_conditioning_path,
+            self.model_path,
+            device="cuda",
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("CUDA is not available on this machine", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "noise.pt").exists())
+
+    @skipIf(torch.backends.mps.is_available(), "MPS is available")
+    def test_mps_must_be_available(self):
+        # Run the command with mps on a machine without it
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.multi_chunk_conditioning_path,
+            self.model_path,
+            device="mps",
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn("MPS is not available on this machine", result.stderr)
 
         # File is not created
         self.assertFalse((self.test_dir / "noise.pt").exists())

@@ -43,7 +43,7 @@ def unet(
     """Runs the UNet on a noised latent to predict the noise tensor that was
     added to it, for a given noise level and conditioning."""
 
-    model_tensors = _get_unet_tensors(model)
+    model_tensors = _get_unet_tensors(model, latent.device)
     time_embedding = _noise_level_to_embedding(noise_level, model_tensors)
     conditioning = _combine_chunks(conditioning)
     x, skips = _input_blocks(
@@ -56,28 +56,30 @@ def unet(
     return _out_layers(x, model_tensors["out"])
 
 
-def _get_unet_tensors(model: safetensors.safe_open) -> dict:
+def _get_unet_tensors(model: safetensors.safe_open, device: str | torch.device) -> dict:
     """Finds the tensors used in the UNet."""
 
     return {
         "time_embed": [
-            _get_layer(model, f"{MODEL_PREFIX}.time_embed.{index}")
+            _get_layer(model, f"{MODEL_PREFIX}.time_embed.{index}", device)
             for index in _get_numbers(model, f"{MODEL_PREFIX}.time_embed")
         ],
         "input_blocks": [
-            _get_block_tensors(model, f"{INPUT_BLOCKS_PREFIX}.{index}")
+            _get_block_tensors(model, f"{INPUT_BLOCKS_PREFIX}.{index}", device)
             for index in _get_numbers(model, INPUT_BLOCKS_PREFIX)
         ],
-        "middle_block": _get_block_tensors(model, MIDDLE_BLOCK_PREFIX),
+        "middle_block": _get_block_tensors(model, MIDDLE_BLOCK_PREFIX, device),
         "output_blocks": [
-            _get_block_tensors(model, f"{OUTPUT_BLOCKS_PREFIX}.{index}")
+            _get_block_tensors(model, f"{OUTPUT_BLOCKS_PREFIX}.{index}", device)
             for index in _get_numbers(model, OUTPUT_BLOCKS_PREFIX)
         ],
-        "out": _get_layers(model, f"{MODEL_PREFIX}.out", OUT_LAYERS),
+        "out": _get_layers(model, f"{MODEL_PREFIX}.out", OUT_LAYERS, device),
     }
 
 
-def _get_layer(model: safetensors.safe_open, prefix: str) -> dict | None:
+def _get_layer(
+    model: safetensors.safe_open, prefix: str, device: str | torch.device
+) -> dict | None:
     """Gets the weight and bias of a single layer, or None if the model has no
     such layer. Some layers have a weight but no bias, in which case the bias is
     None."""
@@ -86,9 +88,9 @@ def _get_layer(model: safetensors.safe_open, prefix: str) -> dict | None:
     if f"{prefix}.weight" not in keys:
         return None
     return {
-        "weight": model.get_tensor(f"{prefix}.weight").float(),
+        "weight": model.get_tensor(f"{prefix}.weight").to(device).float(),
         "bias": (
-            model.get_tensor(f"{prefix}.bias").float()
+            model.get_tensor(f"{prefix}.bias").to(device).float()
             if f"{prefix}.bias" in keys
             else None
         ),
@@ -110,7 +112,7 @@ def _get_numbers(model: safetensors.safe_open, prefix: str) -> list[int]:
 
 
 def _get_block_tensors(
-    model: safetensors.safe_open, prefix: str
+    model: safetensors.safe_open, prefix: str, device: str | torch.device
 ) -> list[tuple[str, dict]]:
     """Finds the tensors of a single block, such as one of the input blocks, the
     middle block, or one of the output blocks. A block is a numbered list of
@@ -125,41 +127,54 @@ def _get_block_tensors(
     for index in _get_numbers(model, prefix):
         part_prefix = f"{prefix}.{index}"
         if f"{part_prefix}.weight" in keys:
-            parts.append(("conv", _get_layer(model, part_prefix)))
+            parts.append(("conv", _get_layer(model, part_prefix, device)))
         elif f"{part_prefix}.op.weight" in keys:
-            parts.append(("downsample", _get_layer(model, f"{part_prefix}.op")))
+            parts.append(("downsample", _get_layer(model, f"{part_prefix}.op", device)))
         elif f"{part_prefix}.conv.weight" in keys:
-            parts.append(("upsample", _get_layer(model, f"{part_prefix}.conv")))
+            parts.append(("upsample", _get_layer(model, f"{part_prefix}.conv", device)))
         elif f"{part_prefix}.in_layers.2.weight" in keys:
-            parts.append(("resnet", _get_layers(model, part_prefix, RESNET_LAYERS)))
+            parts.append(
+                ("resnet", _get_layers(model, part_prefix, RESNET_LAYERS, device))
+            )
         elif f"{part_prefix}.proj_in.weight" in keys:
-            parts.append(("transformer", _get_transformer_tensors(model, part_prefix)))
+            parts.append(
+                ("transformer", _get_transformer_tensors(model, part_prefix, device))
+            )
         else:
             raise ValueError(f"Unrecognised UNet block part: {part_prefix}")
     return parts
 
 
 def _get_layers(
-    model: safetensors.safe_open, prefix: str, names: tuple[str, ...]
+    model: safetensors.safe_open,
+    prefix: str,
+    names: tuple[str, ...],
+    device: str | torch.device,
 ) -> dict:
     """Gets the weight and bias of each of the given layers under a prefix."""
 
-    return {name: _get_layer(model, f"{prefix}.{name}") for name in names}
+    return {name: _get_layer(model, f"{prefix}.{name}", device) for name in names}
 
 
-def _get_transformer_tensors(model: safetensors.safe_open, prefix: str) -> dict:
+def _get_transformer_tensors(
+    model: safetensors.safe_open, prefix: str, device: str | torch.device
+) -> dict:
     """Finds the tensors of a transformer, including every transformer block
     inside it."""
 
-    tensors = _get_layers(model, prefix, TRANSFORMER_LAYERS)
+    tensors = _get_layers(model, prefix, TRANSFORMER_LAYERS, device)
     tensors["transformer_blocks"] = []
     for index in _get_numbers(model, f"{prefix}.transformer_blocks"):
         block_prefix = f"{prefix}.transformer_blocks.{index}"
         tensors["transformer_blocks"].append(
             {
-                **_get_layers(model, block_prefix, TRANSFORMER_BLOCK_LAYERS),
-                "attn1": _get_layers(model, f"{block_prefix}.attn1", ATTENTION_LAYERS),
-                "attn2": _get_layers(model, f"{block_prefix}.attn2", ATTENTION_LAYERS),
+                **_get_layers(model, block_prefix, TRANSFORMER_BLOCK_LAYERS, device),
+                "attn1": _get_layers(
+                    model, f"{block_prefix}.attn1", ATTENTION_LAYERS, device
+                ),
+                "attn2": _get_layers(
+                    model, f"{block_prefix}.attn2", ATTENTION_LAYERS, device
+                ),
             }
         )
     return tensors
@@ -170,8 +185,8 @@ def _noise_level_to_embedding(noise_level: float, model_tensors: dict) -> torch.
     to the UNet's time embedding."""
 
     t = _noise_to_t(noise_level)
-    sinusoid_width = model_tensors["time_embed"][0]["weight"].shape[1]
-    sinusoids = _timestep_sinusoids(t, sinusoid_width)
+    first_weight = model_tensors["time_embed"][0]["weight"]
+    sinusoids = _timestep_sinusoids(t, first_weight.shape[1], first_weight.device)
     return _time_embed(sinusoids, model_tensors["time_embed"])
 
 
@@ -203,14 +218,15 @@ def _noise_to_t(
     return timesteps - 1
 
 
-def _timestep_sinusoids(t: int, width: int) -> torch.Tensor:
+def _timestep_sinusoids(t: int, width: int, device: str | torch.device) -> torch.Tensor:
     """Converts a timestep into a vector of sinusoids, so that the UNet sees
     nearby timesteps as similar vectors. Half of the vector is cosines and half
     is sines, of t multiplied by frequencies spaced geometrically from 1 down to
     1 / 10000."""
 
     half = width // 2
-    frequencies = torch.exp(-math.log(10000) * torch.arange(half) / half)
+    positions = torch.arange(half, device=device)
+    frequencies = torch.exp(-math.log(10000) * positions / half)
     angles = t * frequencies
     return torch.cat([torch.cos(angles), torch.sin(angles)])
 
