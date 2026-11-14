@@ -39,11 +39,13 @@ def unet(
     noise_level: float,
     conditioning: torch.Tensor,
     model: safetensors.safe_open,
+    model_tensors: dict | None = None,
 ) -> torch.Tensor:
     """Runs the UNet on a noised latent to predict the noise tensor that was
     added to it, for a given noise level and conditioning."""
 
-    model_tensors = _get_unet_tensors(model, latent.device)
+    if model_tensors is None:
+        model_tensors = get_unet_tensors(model, latent.device)
     time_embedding = _noise_level_to_embedding(noise_level, model_tensors)
     conditioning = _combine_chunks(conditioning)
     x, skips = _input_blocks(
@@ -56,7 +58,7 @@ def unet(
     return _out_layers(x, model_tensors["out"])
 
 
-def _get_unet_tensors(model: safetensors.safe_open, device: str | torch.device) -> dict:
+def get_unet_tensors(model: safetensors.safe_open, device: str | torch.device) -> dict:
     """Finds the tensors used in the UNet."""
 
     return {
