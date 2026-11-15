@@ -361,18 +361,26 @@ def predict_noise(latent, noise_level, conditioning, model, noise, device):
     default="denoised.pt",
     help="Path to save the denoised latent to.",
 )
-def denoise_latent(latent, positive, negative, schedule, model, cfg, algorithm, output):
+@click.option(
+    "--device",
+    callback=check_device,
+    default="cpu",
+    help="Device to denoise the latent on, such as cpu, cuda or mps.",
+)
+def denoise_latent(
+    latent, positive, negative, schedule, model, cfg, algorithm, output, device
+):
     """Denoises a latent by stepping through a noise schedule using a UNet."""
 
     samplers = {"euler": sample_euler, "heun": sample_heun}
-    latent_tensor = torch.load(latent)
-    positive_tensor = torch.load(positive)
-    negative_tensor = torch.load(negative)
-    with safe_open(model, framework="pt", device="cpu") as tensors:
+    latent_tensor = torch.load(latent, map_location=device)
+    positive_tensor = torch.load(positive, map_location=device)
+    negative_tensor = torch.load(negative, map_location=device)
+    with safe_open(model, framework="pt", device=str(device)) as tensors:
         denoised_tensor = samplers[algorithm](
             positive_tensor, negative_tensor, latent_tensor, tensors, schedule, cfg
         )
-    torch.save(denoised_tensor, output)
+    torch.save(denoised_tensor.cpu(), output)
 
 
 if __name__ == "__main__":
