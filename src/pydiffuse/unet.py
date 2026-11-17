@@ -90,9 +90,9 @@ def _get_layer(
     if f"{prefix}.weight" not in keys:
         return None
     return {
-        "weight": model.get_tensor(f"{prefix}.weight").to(device).float(),
+        "weight": model.get_tensor(f"{prefix}.weight").float().to(device),
         "bias": (
-            model.get_tensor(f"{prefix}.bias").to(device).float()
+            model.get_tensor(f"{prefix}.bias").float().to(device)
             if f"{prefix}.bias" in keys
             else None
         ),

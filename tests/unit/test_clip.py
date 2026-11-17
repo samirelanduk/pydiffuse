@@ -634,6 +634,95 @@ class GetLayerTensorsTests(TestCase):
                 self.assertEqual(layer_tensors[n][key].device.type, "meta")
 
     @patch("pydiffuse.clip._get_encoder_layer_numbers")
+    def test_get_layer_tensors_converts_before_moving(self, mock_get_layer_numbers):
+        mock_get_layer_numbers.return_value = [3, 4, 5]
+        tensors = MagicMock()
+        tensors.keys.return_value = [
+            "cond_stage_model.layers.3.norm1.weight",
+            "cond_stage_model.layers.3.norm1.bias",
+            "cond_stage_model.layers.3.norm2.weight",
+            "cond_stage_model.layers.3.norm2.bias",
+            "cond_stage_model.layers.3.mlp.fc1.weight",
+            "cond_stage_model.layers.3.mlp.fc1.bias",
+            "cond_stage_model.layers.3.mlp.fc2.weight",
+            "cond_stage_model.layers.3.mlp.fc2.bias",
+            "cond_stage_model.layers.3.attn.q_proj.weight",
+            "cond_stage_model.layers.3.attn.q_proj.bias",
+            "cond_stage_model.layers.3.attn.k_proj.weight",
+            "cond_stage_model.layers.3.attn.k_proj.bias",
+            "cond_stage_model.layers.3.attn.v_proj.weight",
+            "cond_stage_model.layers.3.attn.v_proj.bias",
+            "cond_stage_model.layers.3.attn.out_proj.weight",
+            "cond_stage_model.layers.3.attn.out_proj.bias",
+            "cond_stage_model.layers.4.norm1.weight",
+            "cond_stage_model.layers.4.norm1.bias",
+            "cond_stage_model.layers.4.norm2.weight",
+            "cond_stage_model.layers.4.norm2.bias",
+            "cond_stage_model.layers.4.mlp.fc1.weight",
+            "cond_stage_model.layers.4.mlp.fc1.bias",
+            "cond_stage_model.layers.4.mlp.fc2.weight",
+            "cond_stage_model.layers.4.mlp.fc2.bias",
+            "cond_stage_model.layers.4.attn.q_proj.weight",
+            "cond_stage_model.layers.4.attn.q_proj.bias",
+            "cond_stage_model.layers.4.attn.k_proj.weight",
+            "cond_stage_model.layers.4.attn.k_proj.bias",
+            "cond_stage_model.layers.4.attn.v_proj.weight",
+            "cond_stage_model.layers.4.attn.v_proj.bias",
+            "cond_stage_model.layers.4.attn.out_proj.weight",
+            "cond_stage_model.layers.4.attn.out_proj.bias",
+            "cond_stage_model.layers.5.norm1.weight",
+            "cond_stage_model.layers.5.norm1.bias",
+            "cond_stage_model.layers.5.norm2.weight",
+            "cond_stage_model.layers.5.norm2.bias",
+            "cond_stage_model.layers.5.mlp.fc1.weight",
+            "cond_stage_model.layers.5.mlp.fc1.bias",
+            "cond_stage_model.layers.5.mlp.fc2.weight",
+            "cond_stage_model.layers.5.mlp.fc2.bias",
+            "cond_stage_model.layers.5.attn.q_proj.weight",
+            "cond_stage_model.layers.5.attn.q_proj.bias",
+            "cond_stage_model.layers.5.attn.k_proj.weight",
+            "cond_stage_model.layers.5.attn.k_proj.bias",
+            "cond_stage_model.layers.5.attn.v_proj.weight",
+            "cond_stage_model.layers.5.attn.v_proj.bias",
+            "cond_stage_model.layers.5.attn.out_proj.weight",
+            "cond_stage_model.layers.5.attn.out_proj.bias",
+            "sd_model.layers.10.norm1.bias",
+        ]
+        tensor = MagicMock()
+        tensors.get_tensor.return_value = tensor
+        layer_tensors = _get_layer_tensors(tensors, "meta")
+        self.assertEqual(sorted(layer_tensors), [3, 4, 5])
+        for n in layer_tensors:
+            self.assertEqual(
+                sorted(layer_tensors[n]),
+                sorted(
+                    [
+                        "norm1_weight",
+                        "norm1_bias",
+                        "norm2_weight",
+                        "norm2_bias",
+                        "mlp1_weight",
+                        "mlp1_bias",
+                        "mlp2_weight",
+                        "mlp2_bias",
+                        "attn_q_weight",
+                        "attn_q_bias",
+                        "attn_k_weight",
+                        "attn_k_bias",
+                        "attn_v_weight",
+                        "attn_v_bias",
+                        "attn_out_weight",
+                        "attn_out_bias",
+                    ]
+                ),
+            )
+            for key in layer_tensors[n]:
+                self.assertIs(
+                    layer_tensors[n][key], tensor.float.return_value.to.return_value
+                )
+        tensor.float.return_value.to.assert_called_with("meta")
+
+    @patch("pydiffuse.clip._get_encoder_layer_numbers")
     def test_all_layers_must_be_present(self, mock_get_layer_numbers):
         mock_get_layer_numbers.return_value = [3, 4, 5]
         tensors = MagicMock()
@@ -1210,6 +1299,23 @@ class GetNormTensorsTests(TestCase):
             self.assertEqual(norm_tensors[k].shape, (3,))
             self.assertEqual(norm_tensors[k].dtype, torch.float32)
             self.assertEqual(norm_tensors[k].device.type, "meta")
+
+    def test_get_norm_tensors_converts_before_moving(self):
+        tensors = MagicMock()
+        tensors.keys.return_value = [
+            "cond_stage_model.transformer.text_model.encoder.final_layer_norm.weight",
+            "cond_stage_model.transformer.text_model.encoder.final_layer_norm.bias",
+            "cond_stage_model.layers.3.norm1.weight",
+            "cond_stage_model.layers.3.norm1.bias",
+            "sd_model.layers.10.norm1.bias",
+        ]
+        tensor = MagicMock()
+        tensors.get_tensor.return_value = tensor
+        norm_tensors = _get_norm_tensors(tensors, "meta")
+        self.assertEqual(sorted(norm_tensors), ["bias", "weight"])
+        for k in norm_tensors:
+            self.assertIs(norm_tensors[k], tensor.float.return_value.to.return_value)
+        tensor.float.return_value.to.assert_called_with("meta")
 
     def test_all_norm_tensors_must_be_present(self):
         tensors = MagicMock()

@@ -155,7 +155,7 @@ def embed(tokens, model, embedding, device):
 
     with open(tokens) as f:
         token_lists = json.load(f)
-    with safe_open(model, framework="pt", device=str(device)) as tensors:
+    with safe_open(model, framework="pt", device="cpu") as tensors:
         embedding_tensor = clip_embed(token_lists, tensors, device=device)
     torch.save(embedding_tensor.cpu(), embedding)
 
@@ -180,7 +180,7 @@ def encode(embedding, model, conditioning, device):
     """Encodes embeddings using CLIP encoder weights from a model."""
 
     embedding_tensor = torch.load(embedding, map_location=device)
-    with safe_open(model, framework="pt", device=str(device)) as tensors:
+    with safe_open(model, framework="pt", device="cpu") as tensors:
         conditioning_tensor = clip_encode(embedding_tensor, tensors)
     torch.save(conditioning_tensor.cpu(), conditioning)
 
@@ -204,7 +204,7 @@ def encode(embedding, model, conditioning, device):
 def encode_image(image, model, latent, device):
     """Encodes an image into a latent using a VAE."""
 
-    with safe_open(model, framework="pt", device=str(device)) as tensors:
+    with safe_open(model, framework="pt", device="cpu") as tensors:
         latent_tensor = vae_encode(Image.open(image), tensors, device=device)
     torch.save(latent_tensor.cpu(), latent)
 
@@ -229,7 +229,7 @@ def decode_latent(latent, model, image, device):
     """Decodes a latent into an image using a VAE."""
 
     latent_tensor = torch.load(latent, map_location=device)
-    with safe_open(model, framework="pt", device=str(device)) as tensors:
+    with safe_open(model, framework="pt", device="cpu") as tensors:
         image_obj = vae_decode(latent_tensor, tensors)
     image_obj.save(image)
 
@@ -324,7 +324,7 @@ def predict_noise(latent, noise_level, conditioning, model, noise, device):
 
     latent_tensor = torch.load(latent, map_location=device)
     conditioning_tensor = torch.load(conditioning, map_location=device)
-    with safe_open(model, framework="pt", device=str(device)) as tensors:
+    with safe_open(model, framework="pt", device="cpu") as tensors:
         prediction_tensor = unet_predict(
             latent_tensor, noise_level, conditioning_tensor, tensors
         )
@@ -376,7 +376,7 @@ def denoise_latent(
     latent_tensor = torch.load(latent, map_location=device)
     positive_tensor = torch.load(positive, map_location=device)
     negative_tensor = torch.load(negative, map_location=device)
-    with safe_open(model, framework="pt", device=str(device)) as tensors:
+    with safe_open(model, framework="pt", device="cpu") as tensors:
         denoised_tensor = samplers[algorithm](
             positive_tensor, negative_tensor, latent_tensor, tensors, schedule, cfg
         )

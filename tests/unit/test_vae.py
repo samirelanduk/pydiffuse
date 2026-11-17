@@ -516,6 +516,24 @@ class GetLayerTests(TestCase):
             self.assertEqual(layer[key].dtype, torch.float32)
             self.assertEqual(layer[key].device.type, "meta")
 
+    def test_get_layer_converts_before_moving(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "first_stage_model.encoder.conv_in.weight",
+            "first_stage_model.encoder.conv_in.bias",
+            "first_stage_model.encoder.norm_out.weight",
+            "first_stage_model.decoder.conv_in.weight",
+            "first_stage_model.decoder.conv_in.bias",
+            "xxx",
+        ]
+        tensor = MagicMock()
+        model.get_tensor.return_value = tensor
+        layer = _get_layer(model, "first_stage_model.encoder.conv_in", "meta") or {}
+        self.assertEqual(sorted(layer), ["bias", "weight"])
+        for key in layer:
+            self.assertIs(layer[key], tensor.float.return_value.to.return_value)
+        tensor.float.return_value.to.assert_called_with("meta")
+
     def test_get_layer_weight_not_in_model(self):
         model = MagicMock()
         model.keys.return_value = [

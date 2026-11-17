@@ -262,6 +262,26 @@ class GetLayerTests(TestCase):
             self.assertEqual(layer[key].shape, (3,))
             self.assertEqual(layer[key].device.type, "meta")
 
+    def test_get_layer_converts_before_moving(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "model.diffusion_model.input_blocks.0.0.weight",
+            "model.diffusion_model.input_blocks.0.0.bias",
+            "model.diffusion_model.out.0.weight",
+            "model.diffusion_model.time_embed.0.weight",
+            "model.diffusion_model.time_embed.0.bias",
+            "xxx",
+        ]
+        tensor = MagicMock()
+        model.get_tensor.return_value = tensor
+        layer = (
+            _get_layer(model, "model.diffusion_model.input_blocks.0.0", "meta") or {}
+        )
+        self.assertEqual(sorted(layer), ["bias", "weight"])
+        for key in layer:
+            self.assertIs(layer[key], tensor.float.return_value.to.return_value)
+        tensor.float.return_value.to.assert_called_with("meta")
+
     def test_get_layer_weight_not_in_model(self):
         model = MagicMock()
         model.keys.return_value = [

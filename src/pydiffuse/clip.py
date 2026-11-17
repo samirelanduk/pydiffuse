@@ -193,7 +193,7 @@ def _get_layer_tensors(
         layer_number = int(layer_number_match.group(1))
         for suffix, name in lookup.items():
             if key.endswith(suffix):
-                tensor = tensors.get_tensor(key).to(device).float()
+                tensor = tensors.get_tensor(key).float().to(device)
                 layer_tensor[layer_number][name] = tensor
                 break
     for layer_number in layer_numbers:
@@ -291,7 +291,7 @@ def _get_norm_tensors(
         if not layer_number_match:
             for suffix, name in lookup.items():
                 if key.endswith(suffix):
-                    norm_tensors[name] = tensors.get_tensor(key).to(device).float()
+                    norm_tensors[name] = tensors.get_tensor(key).float().to(device)
                     break
     for key, value in norm_tensors.items():
         if value is None:
