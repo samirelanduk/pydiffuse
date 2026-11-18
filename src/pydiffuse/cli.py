@@ -61,19 +61,18 @@ def check_parent(ctx, param, value):
     return value
 
 
-def check_device(ctx, param, value):
-    """Rejects a device that torch doesn't recognise, or that isn't available on
-    this machine."""
+def choose_device(ctx, param, value):
+    """Picks the device to calculate on: the GPU (CUDA if there is one,
+    otherwise MPS) if asked for, or the CPU. Rejects a request for the GPU on a
+    machine without one, rather than quietly running on the CPU."""
 
-    try:
-        device = torch.device(value)
-    except RuntimeError:
-        raise click.BadParameter(f"'{value}' is not a valid device.")
-    if device.type == "cuda" and not torch.cuda.is_available():
-        raise click.BadParameter("CUDA is not available on this machine.")
-    if device.type == "mps" and not torch.backends.mps.is_available():
-        raise click.BadParameter("MPS is not available on this machine.")
-    return device
+    if not value:
+        return torch.device("cpu")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    raise click.BadParameter("No GPU (CUDA or MPS) is available on this machine.")
 
 
 def check_schedule(ctx, param, value):
@@ -145,10 +144,11 @@ def tokenize(text, tokens, mappings, tokenizer):
     help="Path to save the embedding to.",
 )
 @click.option(
-    "--device",
-    callback=check_device,
-    default="cpu",
-    help="Device to compute the embedding on, such as cpu, cuda or mps.",
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Compute the embedding on the GPU (CUDA or MPS) instead of the CPU.",
 )
 def embed(tokens, model, embedding, device):
     """Embeds tokens using CLIP embedding weights from a model."""
@@ -171,10 +171,11 @@ def embed(tokens, model, embedding, device):
     help="Path to save the conditioning to.",
 )
 @click.option(
-    "--device",
-    callback=check_device,
-    default="cpu",
-    help="Device to compute the conditioning on, such as cpu, cuda or mps.",
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Compute the conditioning on the GPU (CUDA or MPS) instead of the CPU.",
 )
 def encode(embedding, model, conditioning, device):
     """Encodes embeddings using CLIP encoder weights from a model."""
@@ -196,10 +197,11 @@ def encode(embedding, model, conditioning, device):
     help="Path to save the latent to.",
 )
 @click.option(
-    "--device",
-    callback=check_device,
-    default="cpu",
-    help="Device to compute the latent on, such as cpu, cuda or mps.",
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Compute the latent on the GPU (CUDA or MPS) instead of the CPU.",
 )
 def encode_image(image, model, latent, device):
     """Encodes an image into a latent using a VAE."""
@@ -220,10 +222,11 @@ def encode_image(image, model, latent, device):
     help="Path to save the image to.",
 )
 @click.option(
-    "--device",
-    callback=check_device,
-    default="cpu",
-    help="Device to compute the image on, such as cpu, cuda or mps.",
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Compute the image on the GPU (CUDA or MPS) instead of the CPU.",
 )
 def decode_latent(latent, model, image, device):
     """Decodes a latent into an image using a VAE."""
@@ -264,10 +267,11 @@ def create_latent(width, height, model, output):
     help="Path to save the noised tensor to.",
 )
 @click.option(
-    "--device",
-    callback=check_device,
-    default="cpu",
-    help="Device to add the noise on, such as cpu, cuda or mps.",
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Add the noise on the GPU (CUDA or MPS) instead of the CPU.",
 )
 def apply_noise(tensor, noise_level, output, device):
     """Adds noise to a tensor at the given noise level."""
@@ -314,10 +318,11 @@ def noise_schedule(steps, algorithm, output):
     help="Path to save the noise prediction to.",
 )
 @click.option(
-    "--device",
-    callback=check_device,
-    default="cpu",
-    help="Device to predict the noise on, such as cpu, cuda or mps.",
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Predict the noise on the GPU (CUDA or MPS) instead of the CPU.",
 )
 def predict_noise(latent, noise_level, conditioning, model, noise, device):
     """Predicts the noise in a noised latent using a UNet."""
@@ -362,10 +367,11 @@ def predict_noise(latent, noise_level, conditioning, model, noise, device):
     help="Path to save the denoised latent to.",
 )
 @click.option(
-    "--device",
-    callback=check_device,
-    default="cpu",
-    help="Device to denoise the latent on, such as cpu, cuda or mps.",
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Denoise the latent on the GPU (CUDA or MPS) instead of the CPU.",
 )
 def denoise_latent(
     latent, positive, negative, schedule, model, cfg, algorithm, output, device
