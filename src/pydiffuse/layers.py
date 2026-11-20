@@ -79,6 +79,48 @@ def convolution(
     )
 
 
+def resnet_block(
+    norm1: dict,
+    conv1: dict,
+    norm2: dict,
+    conv2: dict,
+    shortcut: dict | None,
+    input: torch.Tensor,
+    groups: int,
+    padding: int,
+    embedding: torch.Tensor | None = None,
+    embedding_layer: dict | None = None,
+) -> torch.Tensor:
+    """Applies a residual block to the incoming data, which should be a 3D
+    tensor of shape [channels, height, width]. The data is normalised,
+    activated and convolved twice, and the result is added back onto the
+    original data. Each layer is a dict holding its weight and bias.
+
+    If an embedding is given, it is activated and passed through the embedding
+    layer to give one value per channel, which is added to every position in
+    that channel between the two convolutions.
+
+    If the block changes the number of channels, the shortcut is a 1x1
+    convolution that the original data is first passed through so that the two
+    can be added together. Otherwise the shortcut should be None.
+
+    The result is a tensor of the same height and width as the input."""
+
+    h = group_norm(norm1["weight"], norm1["bias"], input, groups=groups)
+    h = silu(h)
+    h = convolution(conv1["weight"], conv1["bias"], h, padding=padding)
+    if embedding is not None and embedding_layer is not None:
+        e = silu(embedding)
+        e = linear(embedding_layer["weight"], embedding_layer["bias"], e)
+        h = h + e[:, None, None]
+    h = group_norm(norm2["weight"], norm2["bias"], h, groups=groups)
+    h = silu(h)
+    h = convolution(conv2["weight"], conv2["bias"], h, padding=padding)
+    if shortcut is not None:
+        input = convolution(shortcut["weight"], shortcut["bias"], input)
+    return input + h
+
+
 def silu(input: torch.Tensor) -> torch.Tensor:
     """Applies the SiLU (or swish) activation function to every value in the
     incoming data, which is the value multiplied by its own sigmoid - that is,

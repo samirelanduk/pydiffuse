@@ -778,86 +778,9 @@ class DecodeUpTests(TestCase):
 
 
 class ResnetBlockTests(TestCase):
-    @patch("pydiffuse.vae.group_norm")
-    @patch("pydiffuse.vae.silu")
-    @patch("pydiffuse.vae.convolution")
-    def test_resnet_block(self, mock_convolution, mock_silu, mock_group_norm):
-        x = torch.tensor([[[1.0, 2.0]]])
-        block = {
-            "norm1": {"weight": "norm1 weight", "bias": "norm1 bias"},
-            "conv1": {"weight": "conv1 weight", "bias": "conv1 bias"},
-            "norm2": {"weight": "norm2 weight", "bias": "norm2 bias"},
-            "conv2": {"weight": "conv2 weight", "bias": "conv2 bias"},
-            "nin_shortcut": None,
-        }
-        mock_group_norm.side_effect = [
-            torch.tensor([[[10.0, 20.0]]]),
-            torch.tensor([[[30.0, 40.0]]]),
-        ]
-        mock_silu.side_effect = [
-            torch.tensor([[[11.0, 21.0]]]),
-            torch.tensor([[[31.0, 41.0]]]),
-        ]
-        mock_convolution.side_effect = [
-            torch.tensor([[[12.0, 22.0]]]),
-            torch.tensor([[[100.0, 200.0]]]),
-        ]
-        result = _resnet_block(x, block)
-        self.assertTrue(torch.equal(result, torch.tensor([[[101.0, 202.0]]])))
-        self.assertEqual(
-            mock_group_norm.call_args_list[0][0][:2], ("norm1 weight", "norm1 bias")
-        )
-        self.assertTrue(torch.equal(mock_group_norm.call_args_list[0][0][2], x))
-        self.assertEqual(mock_group_norm.call_args_list[0][1], {"groups": 32})
-        self.assertEqual(
-            mock_group_norm.call_args_list[1][0][:2], ("norm2 weight", "norm2 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_group_norm.call_args_list[1][0][2],
-                torch.tensor([[[12.0, 22.0]]]),
-            )
-        )
-        self.assertEqual(mock_group_norm.call_args_list[1][1], {"groups": 32})
-        self.assertTrue(
-            torch.equal(
-                mock_silu.call_args_list[0][0][0], torch.tensor([[[10.0, 20.0]]])
-            )
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_silu.call_args_list[1][0][0], torch.tensor([[[30.0, 40.0]]])
-            )
-        )
-        self.assertEqual(
-            mock_convolution.call_args_list[0][0][:2], ("conv1 weight", "conv1 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[0][0][2],
-                torch.tensor([[[11.0, 21.0]]]),
-            )
-        )
-        self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})
-        self.assertEqual(
-            mock_convolution.call_args_list[1][0][:2], ("conv2 weight", "conv2 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[1][0][2],
-                torch.tensor([[[31.0, 41.0]]]),
-            )
-        )
-        self.assertEqual(mock_convolution.call_args_list[1][1], {"padding": 1})
-        self.assertEqual(mock_convolution.call_count, 2)
-
-    @patch("pydiffuse.vae.group_norm")
-    @patch("pydiffuse.vae.silu")
-    @patch("pydiffuse.vae.convolution")
-    def test_resnet_block_with_shortcut(
-        self, mock_convolution, mock_silu, mock_group_norm
-    ):
-        x = torch.tensor([[[1.0, 2.0]]])
+    @patch("pydiffuse.vae.resnet_block")
+    def test_resnet_block(self, mock_resnet_block):
+        x = Mock(torch.Tensor)
         block = {
             "norm1": {"weight": "norm1 weight", "bias": "norm1 bias"},
             "conv1": {"weight": "conv1 weight", "bias": "conv1 bias"},
@@ -865,73 +788,18 @@ class ResnetBlockTests(TestCase):
             "conv2": {"weight": "conv2 weight", "bias": "conv2 bias"},
             "nin_shortcut": {"weight": "shortcut weight", "bias": "shortcut bias"},
         }
-        mock_group_norm.side_effect = [
-            torch.tensor([[[10.0, 20.0]]]),
-            torch.tensor([[[30.0, 40.0]]]),
-        ]
-        mock_silu.side_effect = [
-            torch.tensor([[[11.0, 21.0]]]),
-            torch.tensor([[[31.0, 41.0]]]),
-        ]
-        mock_convolution.side_effect = [
-            torch.tensor([[[12.0, 22.0]]]),
-            torch.tensor([[[100.0, 200.0]]]),
-            torch.tensor([[[5.0, 6.0]]]),
-        ]
         result = _resnet_block(x, block)
-        self.assertTrue(torch.equal(result, torch.tensor([[[105.0, 206.0]]])))
-        self.assertEqual(
-            mock_group_norm.call_args_list[0][0][:2], ("norm1 weight", "norm1 bias")
+        self.assertEqual(result, mock_resnet_block.return_value)
+        mock_resnet_block.assert_called_once_with(
+            {"weight": "norm1 weight", "bias": "norm1 bias"},
+            {"weight": "conv1 weight", "bias": "conv1 bias"},
+            {"weight": "norm2 weight", "bias": "norm2 bias"},
+            {"weight": "conv2 weight", "bias": "conv2 bias"},
+            {"weight": "shortcut weight", "bias": "shortcut bias"},
+            x,
+            groups=32,
+            padding=1,
         )
-        self.assertTrue(torch.equal(mock_group_norm.call_args_list[0][0][2], x))
-        self.assertEqual(mock_group_norm.call_args_list[0][1], {"groups": 32})
-        self.assertEqual(
-            mock_group_norm.call_args_list[1][0][:2], ("norm2 weight", "norm2 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_group_norm.call_args_list[1][0][2],
-                torch.tensor([[[12.0, 22.0]]]),
-            )
-        )
-        self.assertEqual(mock_group_norm.call_args_list[1][1], {"groups": 32})
-        self.assertTrue(
-            torch.equal(
-                mock_silu.call_args_list[0][0][0], torch.tensor([[[10.0, 20.0]]])
-            )
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_silu.call_args_list[1][0][0], torch.tensor([[[30.0, 40.0]]])
-            )
-        )
-        self.assertEqual(
-            mock_convolution.call_args_list[0][0][:2], ("conv1 weight", "conv1 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[0][0][2],
-                torch.tensor([[[11.0, 21.0]]]),
-            )
-        )
-        self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})
-        self.assertEqual(
-            mock_convolution.call_args_list[1][0][:2], ("conv2 weight", "conv2 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[1][0][2],
-                torch.tensor([[[31.0, 41.0]]]),
-            )
-        )
-        self.assertEqual(mock_convolution.call_args_list[1][1], {"padding": 1})
-        self.assertEqual(
-            mock_convolution.call_args_list[2][0][:2],
-            ("shortcut weight", "shortcut bias"),
-        )
-        self.assertTrue(torch.equal(mock_convolution.call_args_list[2][0][2], x))
-        self.assertEqual(mock_convolution.call_args_list[2][1], {})
-        self.assertEqual(mock_convolution.call_count, 3)
 
 
 class MidBlocksTests(TestCase):

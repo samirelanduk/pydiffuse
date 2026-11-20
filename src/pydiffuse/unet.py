@@ -4,7 +4,15 @@ import re
 import safetensors
 import torch
 
-from .layers import convolution, gelu, group_norm, layer_norm, linear, silu
+from .layers import (
+    convolution,
+    gelu,
+    group_norm,
+    layer_norm,
+    linear,
+    resnet_block,
+    silu,
+)
 
 MODEL_PREFIX = "model.diffusion_model"
 INPUT_BLOCKS_PREFIX = f"{MODEL_PREFIX}.input_blocks"
@@ -347,53 +355,22 @@ def _out_layers(x: torch.Tensor, out: dict) -> torch.Tensor:
 def _resnet_block(
     x: torch.Tensor, block: dict, time_embedding: torch.Tensor
 ) -> torch.Tensor:
-    """Applies a residual block to the tensor. The tensor is normalised,
-    activated and convolved twice, and the result is added back onto the
-    original tensor.
+    """Applies a residual block to the tensor, using the layers in a UNet
+    resnet block's tensors. The time embedding is added on between the two
+    convolutions, so that the block knows how noisy the tensor is."""
 
-    Between the two convolutions, the time embedding is projected down to one
-    value per channel and added on, so that every position in a channel is
-    shifted by the same amount depending on the timestep.
-
-    If the block changes the number of channels, the original tensor is first
-    passed through a 1x1 convolution so that the two can be added together."""
-
-    h = group_norm(
-        block["in_layers.0"]["weight"],
-        block["in_layers.0"]["bias"],
+    return resnet_block(
+        block["in_layers.0"],
+        block["in_layers.2"],
+        block["out_layers.0"],
+        block["out_layers.3"],
+        block["skip_connection"],
         x,
         groups=NORM_GROUPS,
-    )
-    h = silu(h)
-    h = convolution(
-        block["in_layers.2"]["weight"],
-        block["in_layers.2"]["bias"],
-        h,
         padding=CONV_PADDING,
+        embedding=time_embedding,
+        embedding_layer=block["emb_layers.1"],
     )
-    embedding = silu(time_embedding)
-    embedding = linear(
-        block["emb_layers.1"]["weight"], block["emb_layers.1"]["bias"], embedding
-    )
-    h = h + embedding[:, None, None]
-    h = group_norm(
-        block["out_layers.0"]["weight"],
-        block["out_layers.0"]["bias"],
-        h,
-        groups=NORM_GROUPS,
-    )
-    h = silu(h)
-    h = convolution(
-        block["out_layers.3"]["weight"],
-        block["out_layers.3"]["bias"],
-        h,
-        padding=CONV_PADDING,
-    )
-    if block["skip_connection"] is not None:
-        x = convolution(
-            block["skip_connection"]["weight"], block["skip_connection"]["bias"], x
-        )
-    return x + h
 
 
 def _transformer(

@@ -4,7 +4,7 @@ import safetensors
 import torch
 from PIL import Image
 
-from .layers import convolution, group_norm, silu
+from .layers import convolution, group_norm, resnet_block, silu
 
 MODEL_PREFIX = "first_stage_model"
 ENCODER_PREFIX = f"{MODEL_PREFIX}.encoder"
@@ -263,41 +263,19 @@ def _decode_up(x: torch.Tensor, up: list[dict]) -> torch.Tensor:
 
 
 def _resnet_block(x: torch.Tensor, block: dict) -> torch.Tensor:
-    """Applies a residual block to the tensor. The tensor is normalised,
-    activated and convolved twice, and the result is added back onto the
-    original tensor.
+    """Applies a residual block to the tensor, using the layers in a VAE
+    resnet block's tensors."""
 
-    If the block changes the number of channels, the original
-    tensor is first passed through a 1x1 convolution so that the two can be
-    added together.
-
-    The final tensor is the same shape as the input."""
-
-    h = group_norm(
-        block["norm1"]["weight"],
-        block["norm1"]["bias"],
+    return resnet_block(
+        block["norm1"],
+        block["conv1"],
+        block["norm2"],
+        block["conv2"],
+        block["nin_shortcut"],
         x,
         groups=NORM_GROUPS,
+        padding=CONV_PADDING,
     )
-    h = silu(h)
-    h = convolution(
-        block["conv1"]["weight"], block["conv1"]["bias"], h, padding=CONV_PADDING
-    )
-    h = group_norm(
-        block["norm2"]["weight"],
-        block["norm2"]["bias"],
-        h,
-        groups=NORM_GROUPS,
-    )
-    h = silu(h)
-    h = convolution(
-        block["conv2"]["weight"], block["conv2"]["bias"], h, padding=CONV_PADDING
-    )
-    if block["nin_shortcut"] is not None:
-        x = convolution(
-            block["nin_shortcut"]["weight"], block["nin_shortcut"]["bias"], x
-        )
-    return x + h
 
 
 def _mid_blocks(x: torch.Tensor, mid: dict) -> torch.Tensor:
