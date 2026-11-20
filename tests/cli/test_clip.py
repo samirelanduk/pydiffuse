@@ -553,6 +553,55 @@ class EncodeTestCase(ClipTestCase):
         self.assertEqual(conditioning.device.type, "cpu")
         self.check_conditioning(conditioning)
 
+    def test_can_use_float64_embedding(self):
+        # Save the embedding as float64
+        embedding_path = self.test_dir / "embedding.pt"
+        torch.save(torch.load(self.embedding_path).double(), embedding_path)
+
+        # Run the command
+        result = self.run_command(embedding_path, self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "conditioning.pt").exists())
+
+        # Encoding is correct
+        with open(self.test_dir / "conditioning.pt", "rb") as f:
+            conditioning = torch.load(f)
+        self.assertEqual(conditioning.dtype, torch.float32)
+        self.check_conditioning(conditioning)
+
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_float64_embedding_on_gpu(self):
+        # Save the embedding as float64
+        embedding_path = self.test_dir / "embedding.pt"
+        torch.save(torch.load(self.embedding_path).double(), embedding_path)
+
+        # Run the command on the GPU
+        result = self.run_command(embedding_path, self.model_path, "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "conditioning.pt").exists())
+
+        # Encoding is correct
+        with open(self.test_dir / "conditioning.pt", "rb") as f:
+            conditioning = torch.load(f)
+        self.assertEqual(conditioning.dtype, torch.float32)
+        self.assertEqual(conditioning.device.type, "cpu")
+        self.check_conditioning(conditioning)
+
     def test_embedding_is_required(self):
         # Run the command with no embedding path
         result = self.run_command(self.model_path)

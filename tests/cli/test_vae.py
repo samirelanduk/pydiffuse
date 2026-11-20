@@ -261,6 +261,50 @@ class DecodeTestCase(VaeTestCase):
         with Image.open(image_path) as image:
             self.check_image(image)
 
+    def test_can_use_float64_latent(self):
+        # Save the latent as float64
+        latent_path = self.test_dir / "latent.pt"
+        torch.save(torch.load(self.latent_path).double(), latent_path)
+
+        # Run the command
+        result = self.run_command(latent_path, self.model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "image.jpg").exists())
+
+        # Image is correct
+        with Image.open(self.test_dir / "image.jpg") as image:
+            self.check_image(image)
+
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_float64_latent_on_gpu(self):
+        # Save the latent as float64
+        latent_path = self.test_dir / "latent.pt"
+        torch.save(torch.load(self.latent_path).double(), latent_path)
+
+        # Run the command on the GPU
+        result = self.run_command(latent_path, self.model_path, "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "image.jpg").exists())
+
+        # Image is correct
+        with Image.open(self.test_dir / "image.jpg") as image:
+            self.check_image(image)
+
     def test_latent_is_required(self):
         # Run the command with no latent path
         result = self.run_command(self.model_path)

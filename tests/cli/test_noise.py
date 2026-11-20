@@ -377,6 +377,53 @@ class ApplyTestCase(NoiseTestCase):
         self.assertEqual(noised.device.type, "cpu")
         self.check_noised(noised, 0.707)
 
+    def test_can_use_float64_tensor(self):
+        # Save the tensor as float64
+        tensor_path = self.test_dir / "tensor.pt"
+        torch.save(self.original.double(), tensor_path)
+
+        # Run the command
+        result = self.run_command(tensor_path, "0.5")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "noised.pt").exists())
+
+        # Noising is correct
+        with open(self.test_dir / "noised.pt", "rb") as f:
+            noised = torch.load(f)
+        self.check_noised(noised, 0.707)
+
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_float64_tensor_on_gpu(self):
+        # Save the tensor as float64
+        tensor_path = self.test_dir / "tensor.pt"
+        torch.save(self.original.double(), tensor_path)
+
+        # Run the command on the GPU
+        result = self.run_command(tensor_path, "0.5", "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "noised.pt").exists())
+
+        # Noising is correct
+        with open(self.test_dir / "noised.pt", "rb") as f:
+            noised = torch.load(f)
+        self.assertEqual(noised.device.type, "cpu")
+        self.check_noised(noised, 0.707)
+
     def test_tensor_is_required(self):
         # Run the command with no tensor path
         result = self.run_command()

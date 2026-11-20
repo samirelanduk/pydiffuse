@@ -198,6 +198,76 @@ class UnetPredictTestCase(UnetTestCase):
             noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
         )
 
+    def test_can_use_float64_inputs(self):
+        # Save the latent and conditioning as float64
+        latent_path = self.test_dir / "latent64.pt"
+        conditioning_path = self.test_dir / "conditioning64.pt"
+        torch.save(torch.load(self.latent_path).double(), latent_path)
+        torch.save(
+            torch.load(self.multi_chunk_conditioning_path).double(), conditioning_path
+        )
+
+        # Run the command
+        result = self.run_command(
+            latent_path,
+            "0.5",
+            conditioning_path,
+            self.model_path,
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "noise.pt").exists())
+
+        # Prediction is correct
+        with open(self.test_dir / "noise.pt", "rb") as f:
+            noise = torch.load(f)
+        self.check_noise(
+            noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
+        )
+
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_float64_inputs_on_gpu(self):
+        # Save the latent and conditioning as float64
+        latent_path = self.test_dir / "latent64.pt"
+        conditioning_path = self.test_dir / "conditioning64.pt"
+        torch.save(torch.load(self.latent_path).double(), latent_path)
+        torch.save(
+            torch.load(self.multi_chunk_conditioning_path).double(), conditioning_path
+        )
+
+        # Run the command on the GPU
+        result = self.run_command(
+            latent_path,
+            "0.5",
+            conditioning_path,
+            self.model_path,
+            "--gpu",
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue((self.test_dir / "noise.pt").exists())
+
+        # Prediction is correct
+        with open(self.test_dir / "noise.pt", "rb") as f:
+            noise = torch.load(f)
+        self.assertEqual(noise.device.type, "cpu")
+        self.check_noise(
+            noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
+        )
+
     def test_latent_is_required(self):
         # Run the command with no latent path
         result = self.run_command()

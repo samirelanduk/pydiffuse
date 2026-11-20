@@ -75,6 +75,14 @@ def choose_device(ctx, param, value):
     raise click.BadParameter("No GPU (CUDA or MPS) is available on this machine.")
 
 
+def load_tensor(path, device):
+    """Loads a saved tensor onto the device as float32, whatever type it was
+    saved as. It is converted on the CPU first, because MPS can't hold float64
+    tensors."""
+
+    return torch.load(path, map_location="cpu").float().to(device)
+
+
 def check_schedule(ctx, param, value):
     """Reads a noise schedule file, rejecting it unless it has at least two
     noise levels which are each at least 0 and below 1."""
@@ -180,7 +188,7 @@ def embed(tokens, model, embedding, device):
 def encode(embedding, model, conditioning, device):
     """Encodes embeddings using CLIP encoder weights from a model."""
 
-    embedding_tensor = torch.load(embedding, map_location=device)
+    embedding_tensor = load_tensor(embedding, device)
     with safe_open(model, framework="pt", device="cpu") as tensors:
         conditioning_tensor = clip_encode(embedding_tensor, tensors)
     torch.save(conditioning_tensor.cpu(), conditioning)
@@ -231,7 +239,7 @@ def encode_image(image, model, latent, device):
 def decode_latent(latent, model, image, device):
     """Decodes a latent into an image using a VAE."""
 
-    latent_tensor = torch.load(latent, map_location=device)
+    latent_tensor = load_tensor(latent, device)
     with safe_open(model, framework="pt", device="cpu") as tensors:
         image_obj = vae_decode(latent_tensor, tensors)
     image_obj.save(image)
@@ -276,7 +284,7 @@ def create_latent(width, height, model, output):
 def apply_noise(tensor, noise_level, output, device):
     """Adds noise to a tensor at the given noise level."""
 
-    tensor_obj = torch.load(tensor, map_location=device)
+    tensor_obj = load_tensor(tensor, device)
     noised_tensor = noise_tensor(tensor_obj, noise_level)
     torch.save(noised_tensor.cpu(), output)
 
@@ -327,8 +335,8 @@ def noise_schedule(steps, algorithm, output):
 def predict_noise(latent, noise_level, conditioning, model, noise, device):
     """Predicts the noise in a noised latent using a UNet."""
 
-    latent_tensor = torch.load(latent, map_location=device)
-    conditioning_tensor = torch.load(conditioning, map_location=device)
+    latent_tensor = load_tensor(latent, device)
+    conditioning_tensor = load_tensor(conditioning, device)
     with safe_open(model, framework="pt", device="cpu") as tensors:
         prediction_tensor = unet_predict(
             latent_tensor, noise_level, conditioning_tensor, tensors
@@ -379,9 +387,9 @@ def denoise_latent(
     """Denoises a latent by stepping through a noise schedule using a UNet."""
 
     samplers = {"euler": sample_euler, "heun": sample_heun}
-    latent_tensor = torch.load(latent, map_location=device)
-    positive_tensor = torch.load(positive, map_location=device)
-    negative_tensor = torch.load(negative, map_location=device)
+    latent_tensor = load_tensor(latent, device)
+    positive_tensor = load_tensor(positive, device)
+    negative_tensor = load_tensor(negative, device)
     with safe_open(model, framework="pt", device="cpu") as tensors:
         denoised_tensor = samplers[algorithm](
             positive_tensor, negative_tensor, latent_tensor, tensors, schedule, cfg
