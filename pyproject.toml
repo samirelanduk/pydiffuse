@@ -42,6 +42,12 @@ Issues = "https://github.com/samirelanduk/pydiffuse/issues"
 
 [dependency-groups]
 dev = ["ruff==0.16.3", "pyright==1.1.411", "pre-commit==4.1.0"]
+cpu = ["torch>=2.13"]
+cuda = ["torch>=2.13"]
+
+[tool.uv]
+default-groups = ["dev", "cpu"]
+conflicts = [[{ group = "cpu" }, { group = "cuda" }]]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -49,7 +55,7 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torch = [{ index = "pytorch-cpu", group = "cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pydiffuse"]
