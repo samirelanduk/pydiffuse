@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, skipIf, skipUnless
 
 import torch
 from PIL import Image
@@ -85,6 +85,29 @@ class EncodeTestCase(VaeTestCase):
             latent = torch.load(f)
         self.check_latent(latent)
 
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_gpu(self):
+        # Run the command on the GPU
+        latent_path = self.test_dir / "latent.pt"
+        result = self.run_command(self.image_path, self.model_path, "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(latent_path.exists())
+
+        # Encoding is correct
+        with open(latent_path, "rb") as f:
+            latent = torch.load(f)
+        self.assertEqual(latent.device.type, "cpu")
+        self.check_latent(latent)
+
     def test_image_is_required(self):
         # Run the command with no image path
         result = self.run_command(self.model_path)
@@ -149,6 +172,24 @@ class EncodeTestCase(VaeTestCase):
         # File is not created
         self.assertFalse((self.test_dir / "latent.pt").exists())
 
+    @skipIf(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "A GPU is available",
+    )
+    def test_gpu_must_be_available(self):
+        # Run the command on the GPU on a machine without one
+        result = self.run_command(self.image_path, self.model_path, "--gpu")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "No GPU (CUDA or MPS) is available on this machine", result.stderr
+        )
+
+        # File is not created
+        self.assertFalse((self.test_dir / "latent.pt").exists())
+
 
 class DecodeTestCase(VaeTestCase):
     def setUp(self):
@@ -194,6 +235,27 @@ class DecodeTestCase(VaeTestCase):
         # File is created (in correct place)
         self.assertTrue(image_path.exists())
         self.assertFalse((self.test_dir / "image.jpg").exists())
+
+        # Image is correct
+        with Image.open(image_path) as image:
+            self.check_image(image)
+
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_gpu(self):
+        # Run the command on the GPU
+        image_path = self.test_dir / "image.jpg"
+        result = self.run_command(self.latent_path, self.model_path, "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(image_path.exists())
 
         # Image is correct
         with Image.open(image_path) as image:
@@ -259,6 +321,24 @@ class DecodeTestCase(VaeTestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "image.jpg").exists())
+
+    @skipIf(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "A GPU is available",
+    )
+    def test_gpu_must_be_available(self):
+        # Run the command on the GPU on a machine without one
+        result = self.run_command(self.latent_path, self.model_path, "--gpu")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "No GPU (CUDA or MPS) is available on this machine", result.stderr
+        )
 
         # File is not created
         self.assertFalse((self.test_dir / "image.jpg").exists())

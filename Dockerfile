@@ -13,11 +13,14 @@ ENV UV_PYTHON_DOWNLOADS=never
 # Assemble here so only the venv needs copying later.
 WORKDIR /app
 
+# Which torch build to install: cpu, or cuda for the -cuda image.
+ARG TORCH=cpu
+
 # Dependencies in their own layer so source edits don't refetch torch.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=uv.lock,target=uv.lock \
-    uv sync --locked --no-install-project --no-dev
+    uv sync --locked --no-install-project --no-default-groups --group ${TORCH}
 
 # Hatchling reads README and LICENSE for wheel metadata.
 COPY pyproject.toml uv.lock README.md LICENSE ./
@@ -27,7 +30,7 @@ COPY src ./src
 
 # Non-editable, so the venv doesn't depend on /app/src.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable
+    uv sync --locked --no-default-groups --group ${TORCH} --no-editable
 
 # Runtime stage
 FROM python:3.13-slim-bookworm

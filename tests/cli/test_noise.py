@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, skipIf, skipUnless
 
 import torch
 
@@ -354,6 +354,29 @@ class ApplyTestCase(NoiseTestCase):
             noised = torch.load(f)
         self.check_noised(noised, 0.707)
 
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_gpu(self):
+        # Run the command on the GPU
+        output_path = self.test_dir / "noised.pt"
+        result = self.run_command(self.tensor_path, "0.5", "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(output_path.exists())
+
+        # Noising is correct
+        with open(output_path, "rb") as f:
+            noised = torch.load(f)
+        self.assertEqual(noised.device.type, "cpu")
+        self.check_noised(noised, 0.707)
+
     def test_tensor_is_required(self):
         # Run the command with no tensor path
         result = self.run_command()
@@ -424,6 +447,24 @@ class ApplyTestCase(NoiseTestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "noised.pt").exists())
+
+    @skipIf(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "A GPU is available",
+    )
+    def test_gpu_must_be_available(self):
+        # Run the command on the GPU on a machine without one
+        result = self.run_command(self.tensor_path, "0.5", "--gpu")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "No GPU (CUDA or MPS) is available on this machine", result.stderr
+        )
 
         # File is not created
         self.assertFalse((self.test_dir / "noised.pt").exists())

@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, skipIf, skipUnless
 
 import torch
 
@@ -346,6 +346,42 @@ class EmbedTestCase(ClipTestCase):
         self.assertAlmostEqual(embedding[2, 76, 0].item(), -1.012, places=3)
         self.assertAlmostEqual(embedding[2, 76, 11].item(), 0.025, places=3)
 
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_gpu(self):
+        # Run the command on the GPU
+        tokens_path = self.create_tokens()
+        embedding_path = self.test_dir / "embedding.pt"
+        result = self.run_command(tokens_path, self.model_path, "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(embedding_path.exists())
+
+        # Embedding is correct
+        with open(embedding_path, "rb") as f:
+            embedding = torch.load(f)
+        self.assertEqual(embedding.device.type, "cpu")
+        self.assertEqual(embedding.shape, (3, 77, 12))
+        self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
+        self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.082, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 11].item(), 0.025, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 0].item(), 0.534, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 11].item(), 1.369, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 11].item(), 0.025, places=3)
+
     def test_tokens_is_required(self):
         # Run the command with no tokens path
         result = self.run_command(self.model_path)
@@ -414,6 +450,24 @@ class EmbedTestCase(ClipTestCase):
         # File is not created
         self.assertFalse((self.test_dir / "embedding.pt").exists())
 
+    @skipIf(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "A GPU is available",
+    )
+    def test_gpu_must_be_available(self):
+        # Run the command on the GPU on a machine without one
+        result = self.run_command(self.create_tokens(), self.model_path, "--gpu")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "No GPU (CUDA or MPS) is available on this machine", result.stderr
+        )
+
+        # File is not created
+        self.assertFalse((self.test_dir / "embedding.pt").exists())
+
 
 class EncodeTestCase(ClipTestCase):
     def setUp(self):
@@ -474,6 +528,29 @@ class EncodeTestCase(ClipTestCase):
         # Conditioning is correct
         with open(conditioning_path, "rb") as f:
             conditioning = torch.load(f)
+        self.check_conditioning(conditioning)
+
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_gpu(self):
+        # Run the command on the GPU
+        conditioning_path = self.test_dir / "conditioning.pt"
+        result = self.run_command(self.embedding_path, self.model_path, "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(conditioning_path.exists())
+
+        # Conditioning is correct
+        with open(conditioning_path, "rb") as f:
+            conditioning = torch.load(f)
+        self.assertEqual(conditioning.device.type, "cpu")
         self.check_conditioning(conditioning)
 
     def test_embedding_is_required(self):
@@ -540,6 +617,24 @@ class EncodeTestCase(ClipTestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "conditioning.pt").exists())
+
+    @skipIf(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "A GPU is available",
+    )
+    def test_gpu_must_be_available(self):
+        # Run the command on the GPU on a machine without one
+        result = self.run_command(self.embedding_path, self.model_path, "--gpu")
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "No GPU (CUDA or MPS) is available on this machine", result.stderr
+        )
 
         # File is not created
         self.assertFalse((self.test_dir / "conditioning.pt").exists())

@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, skipIf, skipUnless
 
 import torch
 
@@ -167,6 +167,37 @@ class UnetPredictTestCase(UnetTestCase):
             noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
         )
 
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_gpu(self):
+        # Run the command on the GPU
+        noise_path = self.test_dir / "noise.pt"
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.multi_chunk_conditioning_path,
+            self.model_path,
+            "--gpu",
+        )
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(noise_path.exists())
+
+        # Prediction is correct
+        with open(noise_path, "rb") as f:
+            noise = torch.load(f)
+        self.assertEqual(noise.device.type, "cpu")
+        self.check_noise(
+            noise, [-0.237, 0.009, 0.059, 0.222, 0.25, -0.092, 0.074, -0.265]
+        )
+
     def test_latent_is_required(self):
         # Run the command with no latent path
         result = self.run_command()
@@ -320,6 +351,30 @@ class UnetPredictTestCase(UnetTestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse(result.stdout.strip())
         self.assertIn("Directory '/no/such/path' does not exist", result.stderr)
+
+        # File is not created
+        self.assertFalse((self.test_dir / "noise.pt").exists())
+
+    @skipIf(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "A GPU is available",
+    )
+    def test_gpu_must_be_available(self):
+        # Run the command on the GPU on a machine without one
+        result = self.run_command(
+            self.latent_path,
+            "0.5",
+            self.multi_chunk_conditioning_path,
+            self.model_path,
+            "--gpu",
+        )
+
+        # Process failed
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout.strip())
+        self.assertIn(
+            "No GPU (CUDA or MPS) is available on this machine", result.stderr
+        )
 
         # File is not created
         self.assertFalse((self.test_dir / "noise.pt").exists())

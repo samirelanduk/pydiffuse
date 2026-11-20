@@ -60,9 +60,59 @@ class EncodeTests(TestCase):
         model = Mock(safetensors.safe_open)
         latent = encode(image, model)
         self.assertTrue(torch.allclose(latent, torch.tensor([0.18215, 0.3643])))
-        mock_tensors.assert_called_once_with(model)
+        mock_tensors.assert_called_once_with(model, "cpu")
         mock_ratio.assert_called_once_with(model)
-        mock_to_tensor.assert_called_once_with(image, mock_ratio.return_value)
+        mock_to_tensor.assert_called_once_with(image, mock_ratio.return_value, "cpu")
+        self.assertEqual(
+            [call[0] for call in mock_convolution.call_args_list],
+            [
+                ("conv_in weight", "conv_in bias", mock_to_tensor.return_value),
+                ("quant weight", "quant bias", mock_out.return_value),
+            ],
+        )
+        self.assertEqual(
+            [call[1] for call in mock_convolution.call_args_list],
+            [{"padding": 1}, {}],
+        )
+        mock_down.assert_called_once_with(mock_convolution.return_value, "down")
+        mock_mid.assert_called_once_with(mock_down.return_value, "mid")
+        mock_out.assert_called_once_with(mock_mid.return_value, "norm_out", "conv_out")
+        mock_convolution.return_value.narrow.assert_called_once_with(0, 0, 4)
+
+    @patch("pydiffuse.vae._get_encode_tensors")
+    @patch("pydiffuse.vae.get_downscale_ratio")
+    @patch("pydiffuse.vae._image_to_tensor")
+    @patch("pydiffuse.vae.convolution")
+    @patch("pydiffuse.vae._encode_down")
+    @patch("pydiffuse.vae._mid_blocks")
+    @patch("pydiffuse.vae._out_layers")
+    def test_encode_on_device(
+        self,
+        mock_out,
+        mock_mid,
+        mock_down,
+        mock_convolution,
+        mock_to_tensor,
+        mock_ratio,
+        mock_tensors,
+    ):
+        mock_tensors.return_value = {
+            "conv_in": {"weight": "conv_in weight", "bias": "conv_in bias"},
+            "down": "down",
+            "mid": "mid",
+            "norm_out": "norm_out",
+            "conv_out": "conv_out",
+            "quant_conv": {"weight": "quant weight", "bias": "quant bias"},
+        }
+        mock_convolution.return_value.shape = (8, 4, 4)
+        mock_convolution.return_value.narrow.return_value = torch.tensor([1.0, 2.0])
+        image = Mock(Image.Image)
+        model = Mock(safetensors.safe_open)
+        latent = encode(image, model, device="meta")
+        self.assertTrue(torch.allclose(latent, torch.tensor([0.18215, 0.3643])))
+        mock_tensors.assert_called_once_with(model, "meta")
+        mock_ratio.assert_called_once_with(model)
+        mock_to_tensor.assert_called_once_with(image, mock_ratio.return_value, "meta")
         self.assertEqual(
             [call[0] for call in mock_convolution.call_args_list],
             [
@@ -108,7 +158,7 @@ class DecodeTests(TestCase):
         model = Mock(safetensors.safe_open)
         image = decode(latent, model)
         self.assertEqual(image, mock_to_image.return_value)
-        mock_tensors.assert_called_once_with(model)
+        mock_tensors.assert_called_once_with(model, torch.device("cpu"))
         self.assertEqual(
             [call[0][:2] for call in mock_convolution.call_args_list],
             [("post weight", "post bias"), ("conv_in weight", "conv_in bias")],
@@ -118,6 +168,53 @@ class DecodeTests(TestCase):
                 mock_convolution.call_args_list[0][0][2], torch.tensor([1.0, 2.0])
             )
         )
+        self.assertEqual(
+            mock_convolution.call_args_list[1][0][2], mock_convolution.return_value
+        )
+        self.assertEqual(
+            [call[1] for call in mock_convolution.call_args_list],
+            [{}, {"padding": 1}],
+        )
+        mock_mid.assert_called_once_with(mock_convolution.return_value, "mid")
+        mock_up.assert_called_once_with(mock_mid.return_value, "up")
+        mock_out.assert_called_once_with(mock_up.return_value, "norm_out", "conv_out")
+        mock_to_image.assert_called_once_with(mock_out.return_value)
+
+    @patch("pydiffuse.vae._get_decode_tensors")
+    @patch("pydiffuse.vae.convolution")
+    @patch("pydiffuse.vae._mid_blocks")
+    @patch("pydiffuse.vae._decode_up")
+    @patch("pydiffuse.vae._out_layers")
+    @patch("pydiffuse.vae._tensor_to_image")
+    def test_decode_on_device(
+        self,
+        mock_to_image,
+        mock_out,
+        mock_up,
+        mock_mid,
+        mock_convolution,
+        mock_tensors,
+    ):
+        mock_tensors.return_value = {
+            "post_quant_conv": {"weight": "post weight", "bias": "post bias"},
+            "conv_in": {"weight": "conv_in weight", "bias": "conv_in bias"},
+            "mid": "mid",
+            "up": "up",
+            "norm_out": "norm_out",
+            "conv_out": "conv_out",
+        }
+        latent = torch.tensor([0.18215, 0.3643], device="meta")
+        model = Mock(safetensors.safe_open)
+        image = decode(latent, model)
+        self.assertEqual(image, mock_to_image.return_value)
+        mock_tensors.assert_called_once_with(model, torch.device("meta"))
+        self.assertEqual(
+            [call[0][:2] for call in mock_convolution.call_args_list],
+            [("post weight", "post bias"), ("conv_in weight", "conv_in bias")],
+        )
+        post_input = mock_convolution.call_args_list[0][0][2]
+        self.assertEqual(post_input.shape, (2,))
+        self.assertEqual(post_input.device.type, "meta")
         self.assertEqual(
             mock_convolution.call_args_list[1][0][2], mock_convolution.return_value
         )
@@ -185,10 +282,12 @@ class GetEncodeTensorsTests(TestCase):
         mock_numbers.side_effect = lambda model, prefix: (
             [int(prefix.split(".")[-2])] if prefix.endswith(".block") else [0, 1]
         )
-        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
-        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
+        mock_layers.side_effect = lambda model, prefix, names, device: (
+            f"layers {prefix}"
+        )
+        mock_layer.side_effect = lambda model, prefix, device: f"layer {prefix}"
         model = Mock(safetensors.safe_open)
-        tensors = _get_encode_tensors(model)
+        tensors = _get_encode_tensors(model, "cpu")
         self.assertEqual(
             [call[0] for call in mock_numbers.call_args_list],
             [
@@ -204,15 +303,18 @@ class GetEncodeTensorsTests(TestCase):
                     model,
                     "first_stage_model.encoder.down.0.block.0",
                     ("norm1", "conv1", "norm2", "conv2", "nin_shortcut"),
+                    "cpu",
                 ),
                 (
                     model,
                     "first_stage_model.encoder.down.1.block.1",
                     ("norm1", "conv1", "norm2", "conv2", "nin_shortcut"),
+                    "cpu",
                 ),
             ],
         )
-        mock_mid.assert_called_once_with(model, "first_stage_model.encoder")
+        mock_mid.assert_called_once_with(model, "first_stage_model.encoder", "cpu")
+        self.assertEqual({call[0][2] for call in mock_layer.call_args_list}, {"cpu"})
         self.assertEqual(
             tensors,
             {
@@ -254,10 +356,12 @@ class GetDecodeTensorsTests(TestCase):
         mock_numbers.side_effect = lambda model, prefix: (
             [int(prefix.split(".")[-2])] if prefix.endswith(".block") else [0, 1]
         )
-        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
-        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
+        mock_layers.side_effect = lambda model, prefix, names, device: (
+            f"layers {prefix}"
+        )
+        mock_layer.side_effect = lambda model, prefix, device: f"layer {prefix}"
         model = Mock(safetensors.safe_open)
-        tensors = _get_decode_tensors(model)
+        tensors = _get_decode_tensors(model, "cpu")
         self.assertEqual(
             tensors,
             {
@@ -297,15 +401,18 @@ class GetDecodeTensorsTests(TestCase):
                     model,
                     "first_stage_model.decoder.up.0.block.0",
                     ("norm1", "conv1", "norm2", "conv2", "nin_shortcut"),
+                    "cpu",
                 ),
                 (
                     model,
                     "first_stage_model.decoder.up.1.block.1",
                     ("norm1", "conv1", "norm2", "conv2", "nin_shortcut"),
+                    "cpu",
                 ),
             ],
         )
-        mock_mid.assert_called_once_with(model, "first_stage_model.decoder")
+        mock_mid.assert_called_once_with(model, "first_stage_model.decoder", "cpu")
+        self.assertEqual({call[0][2] for call in mock_layer.call_args_list}, {"cpu"})
 
 
 class GetNumbersTests(TestCase):
@@ -342,16 +449,16 @@ class GetNumbersTests(TestCase):
 class GetLayersTests(TestCase):
     @patch("pydiffuse.vae._get_layer")
     def test_get_layers(self, mock_layer):
-        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
+        mock_layer.side_effect = lambda model, prefix, device: f"layer {prefix}"
         model = Mock(safetensors.safe_open)
-        layers = _get_layers(model, "prefix", ("norm1", "conv1", "nin_shortcut"))
+        layers = _get_layers(model, "prefix", ("norm1", "conv1", "nin_shortcut"), "cpu")
 
         self.assertEqual(
             [call[0] for call in mock_layer.call_args_list],
             [
-                (model, "prefix.norm1"),
-                (model, "prefix.conv1"),
-                (model, "prefix.nin_shortcut"),
+                (model, "prefix.norm1", "cpu"),
+                (model, "prefix.conv1", "cpu"),
+                (model, "prefix.nin_shortcut", "cpu"),
             ],
         )
         self.assertEqual(
@@ -378,7 +485,7 @@ class GetLayerTests(TestCase):
         model.get_tensor.side_effect = lambda key: torch.tensor(
             [len(key), len(key) * 2, len(key) * 3]
         )
-        layer = _get_layer(model, "first_stage_model.encoder.conv_in") or {}
+        layer = _get_layer(model, "first_stage_model.encoder.conv_in", "cpu") or {}
         for key in layer:
             layer[key] = layer[key].tolist()
         self.assertEqual(
@@ -388,6 +495,44 @@ class GetLayerTests(TestCase):
                 "bias": [38, 76, 114],
             },
         )
+
+    def test_get_layer_on_device(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "first_stage_model.encoder.conv_in.weight",
+            "first_stage_model.encoder.conv_in.bias",
+            "first_stage_model.encoder.norm_out.weight",
+            "first_stage_model.decoder.conv_in.weight",
+            "first_stage_model.decoder.conv_in.bias",
+            "xxx",
+        ]
+        model.get_tensor.side_effect = lambda key: torch.tensor(
+            [len(key), len(key) * 2, len(key) * 3]
+        )
+        layer = _get_layer(model, "first_stage_model.encoder.conv_in", "meta") or {}
+        self.assertEqual(sorted(layer), ["bias", "weight"])
+        for key in layer:
+            self.assertEqual(layer[key].shape, (3,))
+            self.assertEqual(layer[key].dtype, torch.float32)
+            self.assertEqual(layer[key].device.type, "meta")
+
+    def test_get_layer_converts_before_moving(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "first_stage_model.encoder.conv_in.weight",
+            "first_stage_model.encoder.conv_in.bias",
+            "first_stage_model.encoder.norm_out.weight",
+            "first_stage_model.decoder.conv_in.weight",
+            "first_stage_model.decoder.conv_in.bias",
+            "xxx",
+        ]
+        tensor = MagicMock()
+        model.get_tensor.return_value = tensor
+        layer = _get_layer(model, "first_stage_model.encoder.conv_in", "meta") or {}
+        self.assertEqual(sorted(layer), ["bias", "weight"])
+        for key in layer:
+            self.assertIs(layer[key], tensor.float.return_value.to.return_value)
+        tensor.float.return_value.to.assert_called_with("meta")
 
     def test_get_layer_weight_not_in_model(self):
         model = MagicMock()
@@ -401,7 +546,9 @@ class GetLayerTests(TestCase):
         model.get_tensor.side_effect = lambda key: torch.tensor(
             [len(key), len(key) * 2, len(key) * 3]
         )
-        self.assertIsNone(_get_layer(model, "first_stage_model.encoder.conv_out"))
+        self.assertIsNone(
+            _get_layer(model, "first_stage_model.encoder.conv_out", "cpu")
+        )
 
     def test_get_layer_bias_not_in_model(self):
         model = MagicMock()
@@ -415,15 +562,19 @@ class GetLayerTests(TestCase):
         model.get_tensor.side_effect = lambda key: torch.tensor(
             [len(key), len(key) * 2, len(key) * 3]
         )
-        self.assertIsNone(_get_layer(model, "first_stage_model.encoder.conv_out"))
+        self.assertIsNone(
+            _get_layer(model, "first_stage_model.encoder.conv_out", "cpu")
+        )
 
 
 class GetMidTensorsTests(TestCase):
     @patch("pydiffuse.vae._get_layers")
     def test_get_mid_tensors(self, mock_layers):
-        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
+        mock_layers.side_effect = lambda model, prefix, names, device: (
+            f"layers {prefix}"
+        )
         model = Mock(safetensors.safe_open)
-        mid = _get_mid_tensors(model, "first_stage_model.encoder")
+        mid = _get_mid_tensors(model, "first_stage_model.encoder", "cpu")
         self.assertEqual(
             mid,
             {
@@ -439,16 +590,19 @@ class GetMidTensorsTests(TestCase):
                     model,
                     "first_stage_model.encoder.mid.block_1",
                     ("norm1", "conv1", "norm2", "conv2", "nin_shortcut"),
+                    "cpu",
                 ),
                 (
                     model,
                     "first_stage_model.encoder.mid.attn_1",
                     ("norm", "q", "k", "v", "proj_out"),
+                    "cpu",
                 ),
                 (
                     model,
                     "first_stage_model.encoder.mid.block_2",
                     ("norm1", "conv1", "norm2", "conv2", "nin_shortcut"),
+                    "cpu",
                 ),
             ],
         )
@@ -458,7 +612,7 @@ class ImageToTensorTests(TestCase):
     def test_image_to_tensor(self):
         image = Image.new("RGB", (2, 2))
         image.putdata([(0, 0, 0), (255, 255, 255), (0, 255, 0), (255, 0, 255)])
-        result = _image_to_tensor(image, 1)
+        result = _image_to_tensor(image, 1, "cpu")
         self.assertTrue(
             torch.equal(
                 result,
@@ -472,11 +626,19 @@ class ImageToTensorTests(TestCase):
             )
         )
 
+    def test_image_to_tensor_on_device(self):
+        image = Image.new("RGB", (2, 2))
+        image.putdata([(0, 0, 0), (255, 255, 255), (0, 255, 0), (255, 0, 255)])
+        result = _image_to_tensor(image, 1, "meta")
+        self.assertEqual(result.shape, (3, 2, 2))
+        self.assertEqual(result.dtype, torch.float32)
+        self.assertEqual(result.device.type, "meta")
+
     def test_image_to_tensor_crops_both_dimensions(self):
         image = Image.new("RGB", (6, 10))
         values = [255, 0, 51, 204, 255, 0, 51, 204, 255, 0]
         image.putdata([(values[x], values[y], 0) for y in range(10) for x in range(6)])
-        result = _image_to_tensor(image, 4)
+        result = _image_to_tensor(image, 4, "cpu")
         self.assertTrue(
             torch.equal(
                 result,
@@ -520,7 +682,7 @@ class ImageToTensorTests(TestCase):
     def test_image_to_tensor_converts_to_rgb(self):
         image = Image.new("L", (2, 2))
         image.putdata([0, 255, 0, 255])
-        result = _image_to_tensor(image, 1)
+        result = _image_to_tensor(image, 1, "cpu")
         self.assertTrue(
             torch.equal(
                 result,
@@ -616,86 +778,9 @@ class DecodeUpTests(TestCase):
 
 
 class ResnetBlockTests(TestCase):
-    @patch("pydiffuse.vae.group_norm")
-    @patch("pydiffuse.vae.silu")
-    @patch("pydiffuse.vae.convolution")
-    def test_resnet_block(self, mock_convolution, mock_silu, mock_group_norm):
-        x = torch.tensor([[[1.0, 2.0]]])
-        block = {
-            "norm1": {"weight": "norm1 weight", "bias": "norm1 bias"},
-            "conv1": {"weight": "conv1 weight", "bias": "conv1 bias"},
-            "norm2": {"weight": "norm2 weight", "bias": "norm2 bias"},
-            "conv2": {"weight": "conv2 weight", "bias": "conv2 bias"},
-            "nin_shortcut": None,
-        }
-        mock_group_norm.side_effect = [
-            torch.tensor([[[10.0, 20.0]]]),
-            torch.tensor([[[30.0, 40.0]]]),
-        ]
-        mock_silu.side_effect = [
-            torch.tensor([[[11.0, 21.0]]]),
-            torch.tensor([[[31.0, 41.0]]]),
-        ]
-        mock_convolution.side_effect = [
-            torch.tensor([[[12.0, 22.0]]]),
-            torch.tensor([[[100.0, 200.0]]]),
-        ]
-        result = _resnet_block(x, block)
-        self.assertTrue(torch.equal(result, torch.tensor([[[101.0, 202.0]]])))
-        self.assertEqual(
-            mock_group_norm.call_args_list[0][0][:2], ("norm1 weight", "norm1 bias")
-        )
-        self.assertTrue(torch.equal(mock_group_norm.call_args_list[0][0][2], x))
-        self.assertEqual(mock_group_norm.call_args_list[0][1], {"groups": 32})
-        self.assertEqual(
-            mock_group_norm.call_args_list[1][0][:2], ("norm2 weight", "norm2 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_group_norm.call_args_list[1][0][2],
-                torch.tensor([[[12.0, 22.0]]]),
-            )
-        )
-        self.assertEqual(mock_group_norm.call_args_list[1][1], {"groups": 32})
-        self.assertTrue(
-            torch.equal(
-                mock_silu.call_args_list[0][0][0], torch.tensor([[[10.0, 20.0]]])
-            )
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_silu.call_args_list[1][0][0], torch.tensor([[[30.0, 40.0]]])
-            )
-        )
-        self.assertEqual(
-            mock_convolution.call_args_list[0][0][:2], ("conv1 weight", "conv1 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[0][0][2],
-                torch.tensor([[[11.0, 21.0]]]),
-            )
-        )
-        self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})
-        self.assertEqual(
-            mock_convolution.call_args_list[1][0][:2], ("conv2 weight", "conv2 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[1][0][2],
-                torch.tensor([[[31.0, 41.0]]]),
-            )
-        )
-        self.assertEqual(mock_convolution.call_args_list[1][1], {"padding": 1})
-        self.assertEqual(mock_convolution.call_count, 2)
-
-    @patch("pydiffuse.vae.group_norm")
-    @patch("pydiffuse.vae.silu")
-    @patch("pydiffuse.vae.convolution")
-    def test_resnet_block_with_shortcut(
-        self, mock_convolution, mock_silu, mock_group_norm
-    ):
-        x = torch.tensor([[[1.0, 2.0]]])
+    @patch("pydiffuse.vae.resnet_block")
+    def test_resnet_block(self, mock_resnet_block):
+        x = Mock(torch.Tensor)
         block = {
             "norm1": {"weight": "norm1 weight", "bias": "norm1 bias"},
             "conv1": {"weight": "conv1 weight", "bias": "conv1 bias"},
@@ -703,73 +788,18 @@ class ResnetBlockTests(TestCase):
             "conv2": {"weight": "conv2 weight", "bias": "conv2 bias"},
             "nin_shortcut": {"weight": "shortcut weight", "bias": "shortcut bias"},
         }
-        mock_group_norm.side_effect = [
-            torch.tensor([[[10.0, 20.0]]]),
-            torch.tensor([[[30.0, 40.0]]]),
-        ]
-        mock_silu.side_effect = [
-            torch.tensor([[[11.0, 21.0]]]),
-            torch.tensor([[[31.0, 41.0]]]),
-        ]
-        mock_convolution.side_effect = [
-            torch.tensor([[[12.0, 22.0]]]),
-            torch.tensor([[[100.0, 200.0]]]),
-            torch.tensor([[[5.0, 6.0]]]),
-        ]
         result = _resnet_block(x, block)
-        self.assertTrue(torch.equal(result, torch.tensor([[[105.0, 206.0]]])))
-        self.assertEqual(
-            mock_group_norm.call_args_list[0][0][:2], ("norm1 weight", "norm1 bias")
+        self.assertEqual(result, mock_resnet_block.return_value)
+        mock_resnet_block.assert_called_once_with(
+            {"weight": "norm1 weight", "bias": "norm1 bias"},
+            {"weight": "conv1 weight", "bias": "conv1 bias"},
+            {"weight": "norm2 weight", "bias": "norm2 bias"},
+            {"weight": "conv2 weight", "bias": "conv2 bias"},
+            {"weight": "shortcut weight", "bias": "shortcut bias"},
+            x,
+            groups=32,
+            padding=1,
         )
-        self.assertTrue(torch.equal(mock_group_norm.call_args_list[0][0][2], x))
-        self.assertEqual(mock_group_norm.call_args_list[0][1], {"groups": 32})
-        self.assertEqual(
-            mock_group_norm.call_args_list[1][0][:2], ("norm2 weight", "norm2 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_group_norm.call_args_list[1][0][2],
-                torch.tensor([[[12.0, 22.0]]]),
-            )
-        )
-        self.assertEqual(mock_group_norm.call_args_list[1][1], {"groups": 32})
-        self.assertTrue(
-            torch.equal(
-                mock_silu.call_args_list[0][0][0], torch.tensor([[[10.0, 20.0]]])
-            )
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_silu.call_args_list[1][0][0], torch.tensor([[[30.0, 40.0]]])
-            )
-        )
-        self.assertEqual(
-            mock_convolution.call_args_list[0][0][:2], ("conv1 weight", "conv1 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[0][0][2],
-                torch.tensor([[[11.0, 21.0]]]),
-            )
-        )
-        self.assertEqual(mock_convolution.call_args_list[0][1], {"padding": 1})
-        self.assertEqual(
-            mock_convolution.call_args_list[1][0][:2], ("conv2 weight", "conv2 bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[1][0][2],
-                torch.tensor([[[31.0, 41.0]]]),
-            )
-        )
-        self.assertEqual(mock_convolution.call_args_list[1][1], {"padding": 1})
-        self.assertEqual(
-            mock_convolution.call_args_list[2][0][:2],
-            ("shortcut weight", "shortcut bias"),
-        )
-        self.assertTrue(torch.equal(mock_convolution.call_args_list[2][0][2], x))
-        self.assertEqual(mock_convolution.call_args_list[2][1], {})
-        self.assertEqual(mock_convolution.call_count, 3)
 
 
 class MidBlocksTests(TestCase):

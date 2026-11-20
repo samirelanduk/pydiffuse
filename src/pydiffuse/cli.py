@@ -61,6 +61,20 @@ def check_parent(ctx, param, value):
     return value
 
 
+def choose_device(ctx, param, value):
+    """Picks the device to calculate on: the GPU (CUDA if there is one,
+    otherwise MPS) if asked for, or the CPU. Rejects a request for the GPU on a
+    machine without one, rather than quietly running on the CPU."""
+
+    if not value:
+        return torch.device("cpu")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    raise click.BadParameter("No GPU (CUDA or MPS) is available on this machine.")
+
+
 def check_schedule(ctx, param, value):
     """Reads a noise schedule file, rejecting it unless it has at least two
     noise levels which are each at least 0 and below 1."""
@@ -129,14 +143,21 @@ def tokenize(text, tokens, mappings, tokenizer):
     default="embedding.pt",
     help="Path to save the embedding to.",
 )
-def embed(tokens, model, embedding):
+@click.option(
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Compute the embedding on the GPU (CUDA or MPS) instead of the CPU.",
+)
+def embed(tokens, model, embedding, device):
     """Embeds tokens using CLIP embedding weights from a model."""
 
     with open(tokens) as f:
         token_lists = json.load(f)
     with safe_open(model, framework="pt", device="cpu") as tensors:
-        embedding_tensor = clip_embed(token_lists, tensors)
-    torch.save(embedding_tensor, embedding)
+        embedding_tensor = clip_embed(token_lists, tensors, device=device)
+    torch.save(embedding_tensor.cpu(), embedding)
 
 
 @clip.command("encode")
@@ -149,13 +170,20 @@ def embed(tokens, model, embedding):
     default="conditioning.pt",
     help="Path to save the conditioning to.",
 )
-def encode(embedding, model, conditioning):
+@click.option(
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Compute the conditioning on the GPU (CUDA or MPS) instead of the CPU.",
+)
+def encode(embedding, model, conditioning, device):
     """Encodes embeddings using CLIP encoder weights from a model."""
 
-    embedding_tensor = torch.load(embedding)
+    embedding_tensor = torch.load(embedding, map_location=device)
     with safe_open(model, framework="pt", device="cpu") as tensors:
         conditioning_tensor = clip_encode(embedding_tensor, tensors)
-    torch.save(conditioning_tensor, conditioning)
+    torch.save(conditioning_tensor.cpu(), conditioning)
 
 
 @vae.command("encode")
@@ -168,12 +196,19 @@ def encode(embedding, model, conditioning):
     default="latent.pt",
     help="Path to save the latent to.",
 )
-def encode_image(image, model, latent):
+@click.option(
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Compute the latent on the GPU (CUDA or MPS) instead of the CPU.",
+)
+def encode_image(image, model, latent, device):
     """Encodes an image into a latent using a VAE."""
 
     with safe_open(model, framework="pt", device="cpu") as tensors:
-        latent_tensor = vae_encode(Image.open(image), tensors)
-    torch.save(latent_tensor, latent)
+        latent_tensor = vae_encode(Image.open(image), tensors, device=device)
+    torch.save(latent_tensor.cpu(), latent)
 
 
 @vae.command("decode")
@@ -186,10 +221,17 @@ def encode_image(image, model, latent):
     default="image.jpg",
     help="Path to save the image to.",
 )
-def decode_latent(latent, model, image):
+@click.option(
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Compute the image on the GPU (CUDA or MPS) instead of the CPU.",
+)
+def decode_latent(latent, model, image, device):
     """Decodes a latent into an image using a VAE."""
 
-    latent_tensor = torch.load(latent)
+    latent_tensor = torch.load(latent, map_location=device)
     with safe_open(model, framework="pt", device="cpu") as tensors:
         image_obj = vae_decode(latent_tensor, tensors)
     image_obj.save(image)
@@ -224,11 +266,19 @@ def create_latent(width, height, model, output):
     default="noised.pt",
     help="Path to save the noised tensor to.",
 )
-def apply_noise(tensor, noise_level, output):
+@click.option(
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Add the noise on the GPU (CUDA or MPS) instead of the CPU.",
+)
+def apply_noise(tensor, noise_level, output, device):
     """Adds noise to a tensor at the given noise level."""
 
-    noised_tensor = noise_tensor(torch.load(tensor), noise_level)
-    torch.save(noised_tensor, output)
+    tensor_obj = torch.load(tensor, map_location=device)
+    noised_tensor = noise_tensor(tensor_obj, noise_level)
+    torch.save(noised_tensor.cpu(), output)
 
 
 @noise.command("schedule")
@@ -267,16 +317,23 @@ def noise_schedule(steps, algorithm, output):
     default="noise.pt",
     help="Path to save the noise prediction to.",
 )
-def predict_noise(latent, noise_level, conditioning, model, noise):
+@click.option(
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Predict the noise on the GPU (CUDA or MPS) instead of the CPU.",
+)
+def predict_noise(latent, noise_level, conditioning, model, noise, device):
     """Predicts the noise in a noised latent using a UNet."""
 
-    latent_tensor = torch.load(latent)
-    conditioning_tensor = torch.load(conditioning)
+    latent_tensor = torch.load(latent, map_location=device)
+    conditioning_tensor = torch.load(conditioning, map_location=device)
     with safe_open(model, framework="pt", device="cpu") as tensors:
         prediction_tensor = unet_predict(
             latent_tensor, noise_level, conditioning_tensor, tensors
         )
-    torch.save(prediction_tensor, noise)
+    torch.save(prediction_tensor.cpu(), noise)
 
 
 @sample.command("denoise")
@@ -309,18 +366,27 @@ def predict_noise(latent, noise_level, conditioning, model, noise):
     default="denoised.pt",
     help="Path to save the denoised latent to.",
 )
-def denoise_latent(latent, positive, negative, schedule, model, cfg, algorithm, output):
+@click.option(
+    "--gpu",
+    "device",
+    is_flag=True,
+    callback=choose_device,
+    help="Denoise the latent on the GPU (CUDA or MPS) instead of the CPU.",
+)
+def denoise_latent(
+    latent, positive, negative, schedule, model, cfg, algorithm, output, device
+):
     """Denoises a latent by stepping through a noise schedule using a UNet."""
 
     samplers = {"euler": sample_euler, "heun": sample_heun}
-    latent_tensor = torch.load(latent)
-    positive_tensor = torch.load(positive)
-    negative_tensor = torch.load(negative)
+    latent_tensor = torch.load(latent, map_location=device)
+    positive_tensor = torch.load(positive, map_location=device)
+    negative_tensor = torch.load(negative, map_location=device)
     with safe_open(model, framework="pt", device="cpu") as tensors:
         denoised_tensor = samplers[algorithm](
             positive_tensor, negative_tensor, latent_tensor, tensors, schedule, cfg
         )
-    torch.save(denoised_tensor, output)
+    torch.save(denoised_tensor.cpu(), output)
 
 
 if __name__ == "__main__":
