@@ -265,3 +265,24 @@ At every step the UNet predicts the noise with both conditionings, and the CFG s
 | `--cfg` | `1.0` | How strongly to steer towards the positive conditioning. |
 | `--algorithm` | `euler` | The algorithm to sample with - `euler` or `heun`. |
 | `--output` | `denoised.pt` | Path to save the denoised latent to. |
+
+### GPUs
+
+Every command that runs a model - `clip embed`, `clip encode`, `vae encode`, `vae decode`, `noise apply`, `unet predict` and `sample denoise` - runs on the CPU by default, and on the GPU if given `--gpu`.
+
+```bash
+pydiffuse unet predict noised.pt 0.5 conditioning.pt model.safetensors --gpu
+```
+
+Both CUDA and MPS are supported.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--gpu` | off | Run on the GPU (CUDA or MPS) instead of the CPU. |
+
+Installing from PyPI gets the CUDA build of torch on Linux, and the MPS build on macOS.
+`uv sync` instead installs the much smaller CPU-only build on Linux, so to develop with CUDA use:
+
+```bash
+uv sync --no-group cpu --group cuda
+```
