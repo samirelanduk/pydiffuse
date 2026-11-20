@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest import TestCase, skipIf, skipUnless
 
 import torch
+from safetensors import safe_open
+from safetensors.torch import save_file
 
 from pydiffuse.clip import TOKENIZER_DIR
 
@@ -302,7 +304,7 @@ class EmbedTestCase(ClipTestCase):
         self.assertEqual(embedding.shape, (3, 77, 12))
         self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
         self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
-        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.082, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.083, places=3)
         self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
         self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
         self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
@@ -335,7 +337,7 @@ class EmbedTestCase(ClipTestCase):
         self.assertEqual(embedding.shape, (3, 77, 12))
         self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
         self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
-        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.082, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.083, places=3)
         self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
         self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
         self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
@@ -371,7 +373,98 @@ class EmbedTestCase(ClipTestCase):
         self.assertEqual(embedding.shape, (3, 77, 12))
         self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
         self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
-        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.082, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.083, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 11].item(), 0.025, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 0].item(), 0.534, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 11].item(), 1.369, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 11].item(), 0.025, places=3)
+
+    def test_can_use_float64_model(self):
+        # Save the model's embedding weights as float64
+        model_path = self.test_dir / "model.safetensors"
+        prefix = "cond_stage_model.transformer.text_model.embeddings"
+        keys = [
+            f"{prefix}.token_embedding.weight",
+            f"{prefix}.position_embedding.weight",
+        ]
+        with safe_open(self.model_path, framework="pt") as tensors:
+            weights = {key: tensors.get_tensor(key).double() for key in keys}
+        save_file(weights, model_path)
+
+        # Run the command
+        tokens_path = self.create_tokens()
+        embedding_path = self.test_dir / "embedding.pt"
+        result = self.run_command(tokens_path, model_path)
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(embedding_path.exists())
+
+        # Embedding is correct
+        with open(embedding_path, "rb") as f:
+            embedding = torch.load(f)
+        self.assertEqual(embedding.dtype, torch.float32)
+        self.assertEqual(embedding.shape, (3, 77, 12))
+        self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
+        self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.083, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
+        self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[1, 76, 11].item(), 0.025, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 0].item(), 0.534, places=3)
+        self.assertAlmostEqual(embedding[2, 0, 11].item(), 1.369, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 0].item(), -1.012, places=3)
+        self.assertAlmostEqual(embedding[2, 76, 11].item(), 0.025, places=3)
+
+    @skipUnless(
+        torch.cuda.is_available() or torch.backends.mps.is_available(),
+        "No GPU is available",
+    )
+    def test_can_use_float64_model_on_gpu(self):
+        # Save the model's embedding weights as float64
+        model_path = self.test_dir / "model.safetensors"
+        prefix = "cond_stage_model.transformer.text_model.embeddings"
+        keys = [
+            f"{prefix}.token_embedding.weight",
+            f"{prefix}.position_embedding.weight",
+        ]
+        with safe_open(self.model_path, framework="pt") as tensors:
+            weights = {key: tensors.get_tensor(key).double() for key in keys}
+        save_file(weights, model_path)
+
+        # Run the command on the GPU
+        tokens_path = self.create_tokens()
+        embedding_path = self.test_dir / "embedding.pt"
+        result = self.run_command(tokens_path, model_path, "--gpu")
+
+        # Process ran successfully
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(result.stdout.strip())
+        self.assertFalse(result.stderr.strip())
+
+        # File is created
+        self.assertTrue(embedding_path.exists())
+
+        # Embedding is correct
+        with open(embedding_path, "rb") as f:
+            embedding = torch.load(f)
+        self.assertEqual(embedding.device.type, "cpu")
+        self.assertEqual(embedding.dtype, torch.float32)
+        self.assertEqual(embedding.shape, (3, 77, 12))
+        self.assertAlmostEqual(embedding[0, 0, 0].item(), 0.385, places=3)
+        self.assertAlmostEqual(embedding[0, 0, 11].item(), 0.036, places=3)
+        self.assertAlmostEqual(embedding[0, 76, 0].item(), -2.083, places=3)
         self.assertAlmostEqual(embedding[0, 76, 11].item(), -0.533, places=3)
         self.assertAlmostEqual(embedding[1, 0, 0].item(), -0.001, places=3)
         self.assertAlmostEqual(embedding[1, 0, 11].item(), 1.848, places=3)

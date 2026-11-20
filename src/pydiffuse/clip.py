@@ -117,7 +117,7 @@ def _create_token_embedding(
     keys = tensors.keys()
     for key in keys:
         if key.endswith("token_embedding.weight"):
-            tensor = tensors.get_tensor(key).to(tokens_tensor.device)
+            tensor = tensors.get_tensor(key).float().to(tokens_tensor.device)
             token_embedding = torch.nn.Embedding(
                 num_embeddings=tensor.shape[0], embedding_dim=tensor.shape[1]
             ).from_pretrained(tensor)
@@ -135,7 +135,7 @@ def _create_position_embedding(
     keys = tensors.keys()
     for key in keys:
         if key.endswith("position_embedding.weight"):
-            tensor = tensors.get_tensor(key).to(tokens_tensor.device)
+            tensor = tensors.get_tensor(key).float().to(tokens_tensor.device)
             position_embedding = torch.nn.Embedding(
                 num_embeddings=tensor.shape[0], embedding_dim=tensor.shape[1]
             ).from_pretrained(tensor)
