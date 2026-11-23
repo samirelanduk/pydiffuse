@@ -11,6 +11,7 @@ from safetensors import safe_open
 from safetensors.torch import save_file
 
 from pydiffuse.clip import TOKENIZER_DIR
+from tests.cli import IN_MAC_VM
 
 PROMPT = """
 ancient weathered stone lighthouse on a jagged basalt cliff edge, late dusk, the last embers of golden hour breaking through fractured storm clouds, volumetric god rays streaming down onto a churning slate-grey sea.
@@ -352,6 +353,7 @@ class EmbedTestCase(ClipTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_gpu(self):
         # Run the command on the GPU
         tokens_path = self.create_tokens()
@@ -431,6 +433,7 @@ class EmbedTestCase(ClipTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_float64_model_on_gpu(self):
         # Save the model's embedding weights as float64
         model_path = self.test_dir / "model.safetensors"
@@ -627,6 +630,7 @@ class EncodeTestCase(ClipTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_gpu(self):
         # Run the command on the GPU
         conditioning_path = self.test_dir / "conditioning.pt"
@@ -672,6 +676,7 @@ class EncodeTestCase(ClipTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_float64_embedding_on_gpu(self):
         # Save the embedding as float64
         embedding_path = self.test_dir / "embedding.pt"

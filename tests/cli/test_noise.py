@@ -7,6 +7,8 @@ from unittest import TestCase, skipIf, skipUnless
 
 import torch
 
+from tests.cli import IN_MAC_VM
+
 
 class NoiseTestCase(TestCase):
     def setUp(self):
@@ -358,6 +360,7 @@ class ApplyTestCase(NoiseTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_gpu(self):
         # Run the command on the GPU
         output_path = self.test_dir / "noised.pt"
@@ -402,6 +405,7 @@ class ApplyTestCase(NoiseTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_float64_tensor_on_gpu(self):
         # Save the tensor as float64
         tensor_path = self.test_dir / "tensor.pt"

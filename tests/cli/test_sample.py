@@ -7,6 +7,8 @@ from unittest import TestCase, skipIf, skipUnless
 
 import torch
 
+from tests.cli import IN_MAC_VM
+
 
 class SampleTestCase(TestCase):
     def setUp(self):
@@ -190,6 +192,7 @@ class DenoiseTestCase(SampleTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_gpu(self):
         # Run the command on the GPU
         result = self.run_command(
@@ -250,6 +253,7 @@ class DenoiseTestCase(SampleTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_float64_inputs_on_gpu(self):
         # Save the latent and conditionings as float64
         latent_path = self.test_dir / "latent64.pt"

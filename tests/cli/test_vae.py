@@ -8,6 +8,8 @@ from unittest import TestCase, skipIf, skipUnless
 import torch
 from PIL import Image
 
+from tests.cli import IN_MAC_VM
+
 
 class VaeTestCase(TestCase):
     def setUp(self):
@@ -89,6 +91,7 @@ class EncodeTestCase(VaeTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_gpu(self):
         # Run the command on the GPU
         latent_path = self.test_dir / "latent.pt"
@@ -244,6 +247,7 @@ class DecodeTestCase(VaeTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_gpu(self):
         # Run the command on the GPU
         image_path = self.test_dir / "image.jpg"
@@ -285,6 +289,7 @@ class DecodeTestCase(VaeTestCase):
         torch.cuda.is_available() or torch.backends.mps.is_available(),
         "No GPU is available",
     )
+    @skipIf(IN_MAC_VM, "Assume no GPU on Mac VMs")
     def test_can_use_float64_latent_on_gpu(self):
         # Save the latent as float64
         latent_path = self.test_dir / "latent.pt"
