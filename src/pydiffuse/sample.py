@@ -3,7 +3,7 @@ from itertools import pairwise
 import safetensors
 import torch
 
-from pydiffuse.unet import unet
+from pydiffuse.unet import get_unet_tensors, unet
 
 
 def sample_euler(
@@ -17,8 +17,11 @@ def sample_euler(
     """Creates a denoised latent image by iteratively running the UNet, using
     the Euler algorithm to step between noise levels."""
 
+    model_tensors = get_unet_tensors(model, latent.device)
     for noise_start, noise_end in pairwise(noise_schedule):
-        noise = _predict_noise(latent, noise_start, positive, negative, model, cfg)
+        noise = _predict_noise(
+            latent, noise_start, positive, negative, model, model_tensors, cfg
+        )
         latent = _remove_noise(latent, noise, noise_start, noise_end)
     return latent
 
@@ -34,14 +37,17 @@ def sample_heun(
     """Creates a denoised latent image by iteratively running the UNet, using
     the Heun algorithm to step between noise levels."""
 
+    model_tensors = get_unet_tensors(model, latent.device)
     for noise_start, noise_end in pairwise(noise_schedule):
-        noise = _predict_noise(latent, noise_start, positive, negative, model, cfg)
+        noise = _predict_noise(
+            latent, noise_start, positive, negative, model, model_tensors, cfg
+        )
         trial_latent = _remove_noise(latent, noise, noise_start, noise_end)
         if noise_end == 0:
             latent = trial_latent
             continue
         trial_noise = _predict_noise(
-            trial_latent, noise_end, positive, negative, model, cfg
+            trial_latent, noise_end, positive, negative, model, model_tensors, cfg
         )
         noise = (noise + trial_noise) / 2
         latent = _remove_noise(latent, noise, noise_start, noise_end)
@@ -54,13 +60,14 @@ def _predict_noise(
     positive: torch.Tensor,
     negative: torch.Tensor,
     model: safetensors.safe_open,
+    model_tensors: dict,
     cfg: float,
 ) -> torch.Tensor:
     """Runs the UNet twice, and returns a final noise prediction that
     prioritises the positive prompt."""
 
-    positive_noise = unet(latent, noise_level, positive, model)
-    negative_noise = unet(latent, noise_level, negative, model)
+    positive_noise = unet(latent, noise_level, positive, model, model_tensors)
+    negative_noise = unet(latent, noise_level, negative, model, model_tensors)
     return negative_noise + cfg * (positive_noise - negative_noise)
 
 

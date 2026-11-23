@@ -14,7 +14,6 @@ from pydiffuse.unet import (
     _get_layers,
     _get_numbers,
     _get_transformer_tensors,
-    _get_unet_tensors,
     _input_blocks,
     _noise_level_to_embedding,
     _noise_to_t,
@@ -26,12 +25,13 @@ from pydiffuse.unet import (
     _transformer,
     _transformer_block,
     _upsample,
+    get_unet_tensors,
     unet,
 )
 
 
 class UnetTests(TestCase):
-    @patch("pydiffuse.unet._get_unet_tensors")
+    @patch("pydiffuse.unet.get_unet_tensors")
     @patch("pydiffuse.unet._noise_level_to_embedding")
     @patch("pydiffuse.unet._combine_chunks")
     @patch("pydiffuse.unet._input_blocks")
@@ -61,8 +61,62 @@ class UnetTests(TestCase):
         model = Mock(safetensors.safe_open)
         result = unet(latent, 0.5, conditioning, model)
         self.assertEqual(result, mock_out_layers.return_value)
-        mock_tensors.assert_called_once_with(model)
+        mock_tensors.assert_called_once_with(model, latent.device)
         mock_embedding.assert_called_once_with(0.5, mock_tensors.return_value)
+        mock_combine.assert_called_once_with(conditioning)
+        mock_input_blocks.assert_called_once_with(
+            latent,
+            "input_blocks",
+            mock_embedding.return_value,
+            mock_combine.return_value,
+        )
+        mock_block.assert_called_once_with(
+            "input blocks output",
+            "middle_block",
+            mock_embedding.return_value,
+            mock_combine.return_value,
+        )
+        mock_output_blocks.assert_called_once_with(
+            mock_block.return_value,
+            "skips",
+            "output_blocks",
+            mock_embedding.return_value,
+            mock_combine.return_value,
+        )
+        mock_out_layers.assert_called_once_with(mock_output_blocks.return_value, "out")
+
+    @patch("pydiffuse.unet.get_unet_tensors")
+    @patch("pydiffuse.unet._noise_level_to_embedding")
+    @patch("pydiffuse.unet._combine_chunks")
+    @patch("pydiffuse.unet._input_blocks")
+    @patch("pydiffuse.unet._block")
+    @patch("pydiffuse.unet._output_blocks")
+    @patch("pydiffuse.unet._out_layers")
+    def test_unet_with_model_tensors(
+        self,
+        mock_out_layers,
+        mock_output_blocks,
+        mock_block,
+        mock_input_blocks,
+        mock_combine,
+        mock_embedding,
+        mock_tensors,
+    ):
+        model_tensors = {
+            "time_embed": "time_embed",
+            "input_blocks": "input_blocks",
+            "middle_block": "middle_block",
+            "output_blocks": "output_blocks",
+            "out": "out",
+        }
+        mock_input_blocks.return_value = ("input blocks output", "skips")
+        latent = Mock(torch.Tensor)
+        conditioning = Mock(torch.Tensor)
+        model = Mock(safetensors.safe_open)
+        result = unet(latent, 0.5, conditioning, model, model_tensors)
+        self.assertEqual(result, mock_out_layers.return_value)
+        mock_tensors.assert_not_called()
+        mock_embedding.assert_called_once_with(0.5, model_tensors)
         mock_combine.assert_called_once_with(conditioning)
         mock_input_blocks.assert_called_once_with(
             latent,
@@ -100,11 +154,13 @@ class GetUnetTensorsTests(TestCase):
             "model.diffusion_model.output_blocks": [0, 3],
         }
         mock_numbers.side_effect = lambda model, prefix: numbers[prefix]
-        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
-        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
-        mock_block_tensors.side_effect = lambda model, prefix: f"block {prefix}"
+        mock_layer.side_effect = lambda model, prefix, device: f"layer {prefix}"
+        mock_layers.side_effect = lambda model, prefix, names, device: (
+            f"layers {prefix}"
+        )
+        mock_block_tensors.side_effect = lambda model, prefix, device: f"block {prefix}"
         model = Mock(safetensors.safe_open)
-        tensors = _get_unet_tensors(model)
+        tensors = get_unet_tensors(model, "cpu")
         self.assertEqual(
             [call[0] for call in mock_numbers.call_args_list],
             [
@@ -116,23 +172,23 @@ class GetUnetTensorsTests(TestCase):
         self.assertEqual(
             [call[0] for call in mock_layer.call_args_list],
             [
-                (model, "model.diffusion_model.time_embed.0"),
-                (model, "model.diffusion_model.time_embed.2"),
+                (model, "model.diffusion_model.time_embed.0", "cpu"),
+                (model, "model.diffusion_model.time_embed.2", "cpu"),
             ],
         )
         self.assertEqual(
             [call[0] for call in mock_block_tensors.call_args_list],
             [
-                (model, "model.diffusion_model.input_blocks.0"),
-                (model, "model.diffusion_model.input_blocks.1"),
-                (model, "model.diffusion_model.input_blocks.2"),
-                (model, "model.diffusion_model.middle_block"),
-                (model, "model.diffusion_model.output_blocks.0"),
-                (model, "model.diffusion_model.output_blocks.3"),
+                (model, "model.diffusion_model.input_blocks.0", "cpu"),
+                (model, "model.diffusion_model.input_blocks.1", "cpu"),
+                (model, "model.diffusion_model.input_blocks.2", "cpu"),
+                (model, "model.diffusion_model.middle_block", "cpu"),
+                (model, "model.diffusion_model.output_blocks.0", "cpu"),
+                (model, "model.diffusion_model.output_blocks.3", "cpu"),
             ],
         )
         mock_layers.assert_called_once_with(
-            model, "model.diffusion_model.out", ("0", "2")
+            model, "model.diffusion_model.out", ("0", "2"), "cpu"
         )
         self.assertEqual(
             tensors,
@@ -170,7 +226,7 @@ class GetLayerTests(TestCase):
         model.get_tensor.side_effect = lambda key: torch.tensor(
             [len(key), len(key) * 2, len(key) * 3], dtype=torch.float16
         )
-        layer = _get_layer(model, "model.diffusion_model.input_blocks.0.0") or {}
+        layer = _get_layer(model, "model.diffusion_model.input_blocks.0.0", "cpu") or {}
         self.assertEqual(layer["weight"].dtype, torch.float32)
         self.assertEqual(layer["bias"].dtype, torch.float32)
         for key in layer:
@@ -182,6 +238,49 @@ class GetLayerTests(TestCase):
                 "bias": [43, 86, 129],
             },
         )
+
+    def test_get_layer_on_device(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "model.diffusion_model.input_blocks.0.0.weight",
+            "model.diffusion_model.input_blocks.0.0.bias",
+            "model.diffusion_model.out.0.weight",
+            "model.diffusion_model.time_embed.0.weight",
+            "model.diffusion_model.time_embed.0.bias",
+            "xxx",
+        ]
+        model.get_tensor.side_effect = lambda key: torch.tensor(
+            [len(key), len(key) * 2, len(key) * 3], dtype=torch.float16
+        )
+        layer = (
+            _get_layer(model, "model.diffusion_model.input_blocks.0.0", "meta") or {}
+        )
+        self.assertEqual(layer["weight"].dtype, torch.float32)
+        self.assertEqual(layer["bias"].dtype, torch.float32)
+        self.assertEqual(sorted(layer), ["bias", "weight"])
+        for key in layer:
+            self.assertEqual(layer[key].shape, (3,))
+            self.assertEqual(layer[key].device.type, "meta")
+
+    def test_get_layer_converts_before_moving(self):
+        model = MagicMock()
+        model.keys.return_value = [
+            "model.diffusion_model.input_blocks.0.0.weight",
+            "model.diffusion_model.input_blocks.0.0.bias",
+            "model.diffusion_model.out.0.weight",
+            "model.diffusion_model.time_embed.0.weight",
+            "model.diffusion_model.time_embed.0.bias",
+            "xxx",
+        ]
+        tensor = MagicMock()
+        model.get_tensor.return_value = tensor
+        layer = (
+            _get_layer(model, "model.diffusion_model.input_blocks.0.0", "meta") or {}
+        )
+        self.assertEqual(sorted(layer), ["bias", "weight"])
+        for key in layer:
+            self.assertIs(layer[key], tensor.float.return_value.to.return_value)
+        tensor.float.return_value.to.assert_called_with("meta")
 
     def test_get_layer_weight_not_in_model(self):
         model = MagicMock()
@@ -195,7 +294,7 @@ class GetLayerTests(TestCase):
         model.get_tensor.side_effect = lambda key: torch.tensor(
             [len(key), len(key) * 2, len(key) * 3], dtype=torch.float16
         )
-        self.assertIsNone(_get_layer(model, "model.diffusion_model.out.2"))
+        self.assertIsNone(_get_layer(model, "model.diffusion_model.out.2", "cpu"))
         model.get_tensor.assert_not_called()
 
     def test_get_layer_bias_not_in_model(self):
@@ -214,6 +313,7 @@ class GetLayerTests(TestCase):
             _get_layer(
                 model,
                 "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1.to_q",
+                "cpu",
             )
             or {}
         )
@@ -272,10 +372,14 @@ class GetBlockTensorsTests(TestCase):
             "block.5.weight",
         ]
         mock_numbers.return_value = [0, 1, 2, 3, 5]
-        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
-        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
-        mock_transformer.side_effect = lambda model, prefix: f"transformer {prefix}"
-        parts = _get_block_tensors(model, "block")
+        mock_layer.side_effect = lambda model, prefix, device: f"layer {prefix}"
+        mock_layers.side_effect = lambda model, prefix, names, device: (
+            f"layers {prefix}"
+        )
+        mock_transformer.side_effect = lambda model, prefix, device: (
+            f"transformer {prefix}"
+        )
+        parts = _get_block_tensors(model, "block", "cpu")
         self.assertEqual(
             parts,
             [
@@ -289,7 +393,11 @@ class GetBlockTensorsTests(TestCase):
         mock_numbers.assert_called_once_with(model, "block")
         self.assertEqual(
             [call[0] for call in mock_layer.call_args_list],
-            [(model, "block.2.op"), (model, "block.3.conv"), (model, "block.5")],
+            [
+                (model, "block.2.op", "cpu"),
+                (model, "block.3.conv", "cpu"),
+                (model, "block.5", "cpu"),
+            ],
         )
         mock_layers.assert_called_once_with(
             model,
@@ -302,8 +410,9 @@ class GetBlockTensorsTests(TestCase):
                 "out_layers.3",
                 "skip_connection",
             ),
+            "cpu",
         )
-        mock_transformer.assert_called_once_with(model, "block.1")
+        mock_transformer.assert_called_once_with(model, "block.1", "cpu")
 
     @patch("pydiffuse.unet._get_numbers")
     @patch("pydiffuse.unet._get_layer")
@@ -318,9 +427,11 @@ class GetBlockTensorsTests(TestCase):
             "block.1.unknown.weight",
         ]
         mock_numbers.return_value = [0, 1]
-        mock_layers.side_effect = lambda model, prefix, names: f"layers {prefix}"
+        mock_layers.side_effect = lambda model, prefix, names, device: (
+            f"layers {prefix}"
+        )
         with self.assertRaises(ValueError) as context:
-            _get_block_tensors(model, "block")
+            _get_block_tensors(model, "block", "cpu")
         self.assertEqual(
             str(context.exception), "Unrecognised UNet block part: block.1"
         )
@@ -332,16 +443,16 @@ class GetBlockTensorsTests(TestCase):
 class GetLayersTests(TestCase):
     @patch("pydiffuse.unet._get_layer")
     def test_get_layers(self, mock_layer):
-        mock_layer.side_effect = lambda model, prefix: f"layer {prefix}"
+        mock_layer.side_effect = lambda model, prefix, device: f"layer {prefix}"
         model = Mock(safetensors.safe_open)
-        layers = _get_layers(model, "prefix", ("norm1", "conv1", "nin_shortcut"))
+        layers = _get_layers(model, "prefix", ("norm1", "conv1", "nin_shortcut"), "cpu")
 
         self.assertEqual(
             [call[0] for call in mock_layer.call_args_list],
             [
-                (model, "prefix.norm1"),
-                (model, "prefix.conv1"),
-                (model, "prefix.nin_shortcut"),
+                (model, "prefix.norm1", "cpu"),
+                (model, "prefix.conv1", "cpu"),
+                (model, "prefix.nin_shortcut", "cpu"),
             ],
         )
         self.assertEqual(
@@ -359,12 +470,12 @@ class GetTransformerTensorsTests(TestCase):
     @patch("pydiffuse.unet._get_layers")
     def test_get_transformer_tensors(self, mock_layers, mock_numbers):
         mock_numbers.return_value = [0, 2]
-        mock_layers.side_effect = lambda model, prefix, names: {
+        mock_layers.side_effect = lambda model, prefix, names, device: {
             name: f"layers {prefix}.{name}" for name in names
         }
         model = Mock(safetensors.safe_open)
         tensors = _get_transformer_tensors(
-            model, "model.diffusion_model.input_blocks.1.1"
+            model, "model.diffusion_model.input_blocks.1.1", "cpu"
         )
         mock_numbers.assert_called_once_with(
             model, "model.diffusion_model.input_blocks.1.1.transformer_blocks"
@@ -376,36 +487,43 @@ class GetTransformerTensorsTests(TestCase):
                     model,
                     "model.diffusion_model.input_blocks.1.1",
                     ("norm", "proj_in", "proj_out"),
+                    "cpu",
                 ),
                 (
                     model,
                     "model.diffusion_model.input_blocks.1.1.transformer_blocks.0",
                     ("norm1", "norm2", "norm3", "ff.net.0.proj", "ff.net.2"),
+                    "cpu",
                 ),
                 (
                     model,
                     "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn1",
                     ("to_q", "to_k", "to_v", "to_out.0"),
+                    "cpu",
                 ),
                 (
                     model,
                     "model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn2",
                     ("to_q", "to_k", "to_v", "to_out.0"),
+                    "cpu",
                 ),
                 (
                     model,
                     "model.diffusion_model.input_blocks.1.1.transformer_blocks.2",
                     ("norm1", "norm2", "norm3", "ff.net.0.proj", "ff.net.2"),
+                    "cpu",
                 ),
                 (
                     model,
                     "model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn1",
                     ("to_q", "to_k", "to_v", "to_out.0"),
+                    "cpu",
                 ),
                 (
                     model,
                     "model.diffusion_model.input_blocks.1.1.transformer_blocks.2.attn2",
                     ("to_q", "to_k", "to_v", "to_out.0"),
+                    "cpu",
                 ),
             ],
         )
@@ -474,7 +592,34 @@ class NoiseLevelToEmbeddingTests(TestCase):
         result = _noise_level_to_embedding(0.5, model_tensors)
         self.assertEqual(result, mock_time_embed.return_value)
         mock_noise_to_t.assert_called_once_with(0.5)
-        mock_sinusoids.assert_called_once_with(mock_noise_to_t.return_value, 32)
+        mock_sinusoids.assert_called_once_with(
+            mock_noise_to_t.return_value, 32, torch.device("cpu")
+        )
+        mock_time_embed.assert_called_once_with(mock_sinusoids.return_value, time_embed)
+
+    @patch("pydiffuse.unet._noise_to_t")
+    @patch("pydiffuse.unet._timestep_sinusoids")
+    @patch("pydiffuse.unet._time_embed")
+    def test_noise_level_to_embedding_on_device(
+        self, mock_time_embed, mock_sinusoids, mock_noise_to_t
+    ):
+        time_embed = [
+            {
+                "weight": torch.zeros(128, 32, device="meta"),
+                "bias": torch.zeros(128, device="meta"),
+            },
+            {
+                "weight": torch.zeros(128, 128, device="meta"),
+                "bias": torch.zeros(128, device="meta"),
+            },
+        ]
+        model_tensors = {"time_embed": time_embed}
+        result = _noise_level_to_embedding(0.5, model_tensors)
+        self.assertEqual(result, mock_time_embed.return_value)
+        mock_noise_to_t.assert_called_once_with(0.5)
+        mock_sinusoids.assert_called_once_with(
+            mock_noise_to_t.return_value, 32, torch.device("meta")
+        )
         mock_time_embed.assert_called_once_with(mock_sinusoids.return_value, time_embed)
 
 
@@ -503,11 +648,11 @@ class NoiseToTTests(TestCase):
 
 class TimestepSinusoidsTests(TestCase):
     def test_timestep_zero(self):
-        sinusoids = _timestep_sinusoids(0, 4)
+        sinusoids = _timestep_sinusoids(0, 4, "cpu")
         self.assertEqual(sinusoids.tolist(), [1.0, 1.0, 0.0, 0.0])
 
     def test_timestep_one(self):
-        sinusoids = _timestep_sinusoids(1, 4)
+        sinusoids = _timestep_sinusoids(1, 4, "cpu")
         self.assertTrue(
             torch.allclose(
                 sinusoids,
@@ -515,8 +660,13 @@ class TimestepSinusoidsTests(TestCase):
             )
         )
 
+    def test_timestep_one_on_device(self):
+        sinusoids = _timestep_sinusoids(1, 4, "meta")
+        self.assertEqual(sinusoids.shape, (4,))
+        self.assertEqual(sinusoids.device.type, "meta")
+
     def test_wider_sinusoids(self):
-        sinusoids = _timestep_sinusoids(10, 6)
+        sinusoids = _timestep_sinusoids(10, 6, "cpu")
         self.assertTrue(
             torch.allclose(
                 sinusoids,
@@ -760,120 +910,10 @@ class OutLayersTests(TestCase):
 
 
 class ResnetBlockTests(TestCase):
-    @patch("pydiffuse.unet.group_norm")
-    @patch("pydiffuse.unet.silu")
-    @patch("pydiffuse.unet.convolution")
-    @patch("pydiffuse.unet.linear")
-    def test_resnet_block(self, mock_linear, mock_convolution, mock_silu, mock_norm):
-        x = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]] * 2)
-        time_embedding = torch.tensor([0.1, 0.2, 0.3, 0.4])
-        block = {
-            "in_layers.0": {"weight": "in norm weight", "bias": "in norm bias"},
-            "in_layers.2": {"weight": "in conv weight", "bias": "in conv bias"},
-            "emb_layers.1": {"weight": "emb weight", "bias": "emb bias"},
-            "out_layers.0": {"weight": "out norm weight", "bias": "out norm bias"},
-            "out_layers.3": {"weight": "out conv weight", "bias": "out conv bias"},
-            "skip_connection": None,
-        }
-        mock_norm.side_effect = [
-            torch.full((2, 2, 3), 10.0),
-            torch.full((2, 2, 3), 30.0),
-        ]
-        mock_silu.side_effect = [
-            torch.full((2, 2, 3), 11.0),
-            torch.tensor([1.0, 2.0, 3.0, 4.0]),
-            torch.full((2, 2, 3), 31.0),
-        ]
-        mock_convolution.side_effect = [
-            torch.tensor(
-                [
-                    [[12.0, 13.0, 14.0], [15.0, 16.0, 17.0]],
-                    [[18.0, 19.0, 20.0], [21.0, 22.0, 23.0]],
-                ]
-            ),
-            torch.tensor(
-                [
-                    [[100.0, 200.0, 300.0], [400.0, 500.0, 600.0]],
-                    [[700.0, 800.0, 900.0], [1000.0, 1100.0, 1200.0]],
-                ]
-            ),
-        ]
-        mock_linear.return_value = torch.tensor([1000.0, 2000.0])
-        result = _resnet_block(x, block, time_embedding)
-        self.assertTrue(
-            torch.equal(
-                result,
-                torch.tensor(
-                    [
-                        [[101.0, 202.0, 303.0], [404.0, 505.0, 606.0]],
-                        [[701.0, 802.0, 903.0], [1004.0, 1105.0, 1206.0]],
-                    ]
-                ),
-            )
-        )
-        self.assertEqual(
-            [call[0][:2] for call in mock_norm.call_args_list],
-            [("in norm weight", "in norm bias"), ("out norm weight", "out norm bias")],
-        )
-        self.assertTrue(torch.equal(mock_norm.call_args_list[0][0][2], x))
-        self.assertTrue(
-            torch.equal(
-                mock_norm.call_args_list[1][0][2],
-                torch.tensor(
-                    [
-                        [[1012.0, 1013.0, 1014.0], [1015.0, 1016.0, 1017.0]],
-                        [[2018.0, 2019.0, 2020.0], [2021.0, 2022.0, 2023.0]],
-                    ]
-                ),
-            )
-        )
-        self.assertEqual(
-            [call[1] for call in mock_norm.call_args_list],
-            [{"groups": 32}, {"groups": 32}],
-        )
-        self.assertTrue(
-            torch.equal(mock_silu.call_args_list[0][0][0], torch.full((2, 2, 3), 10.0))
-        )
-        self.assertTrue(torch.equal(mock_silu.call_args_list[1][0][0], time_embedding))
-        self.assertTrue(
-            torch.equal(mock_silu.call_args_list[2][0][0], torch.full((2, 2, 3), 30.0))
-        )
-        self.assertEqual(
-            mock_linear.call_args_list[0][0][:2], ("emb weight", "emb bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_linear.call_args_list[0][0][2], torch.tensor([1.0, 2.0, 3.0, 4.0])
-            )
-        )
-        self.assertEqual(
-            [call[0][:2] for call in mock_convolution.call_args_list],
-            [("in conv weight", "in conv bias"), ("out conv weight", "out conv bias")],
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[0][0][2], torch.full((2, 2, 3), 11.0)
-            )
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[1][0][2], torch.full((2, 2, 3), 31.0)
-            )
-        )
-        self.assertEqual(
-            [call[1] for call in mock_convolution.call_args_list],
-            [{"padding": 1}, {"padding": 1}],
-        )
-
-    @patch("pydiffuse.unet.group_norm")
-    @patch("pydiffuse.unet.silu")
-    @patch("pydiffuse.unet.convolution")
-    @patch("pydiffuse.unet.linear")
-    def test_resnet_block_with_skip_connection(
-        self, mock_linear, mock_convolution, mock_silu, mock_norm
-    ):
-        x = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]] * 2)
-        time_embedding = torch.tensor([0.1, 0.2, 0.3, 0.4])
+    @patch("pydiffuse.unet.resnet_block")
+    def test_resnet_block(self, mock_resnet_block):
+        x = Mock(torch.Tensor)
+        time_embedding = Mock(torch.Tensor)
         block = {
             "in_layers.0": {"weight": "in norm weight", "bias": "in norm bias"},
             "in_layers.2": {"weight": "in conv weight", "bias": "in conv bias"},
@@ -882,101 +922,20 @@ class ResnetBlockTests(TestCase):
             "out_layers.3": {"weight": "out conv weight", "bias": "out conv bias"},
             "skip_connection": {"weight": "skip weight", "bias": "skip bias"},
         }
-        mock_norm.side_effect = [
-            torch.full((2, 2, 3), 10.0),
-            torch.full((2, 2, 3), 30.0),
-        ]
-        mock_silu.side_effect = [
-            torch.full((2, 2, 3), 11.0),
-            torch.tensor([1.0, 2.0, 3.0, 4.0]),
-            torch.full((2, 2, 3), 31.0),
-        ]
-        mock_convolution.side_effect = [
-            torch.tensor(
-                [
-                    [[12.0, 13.0, 14.0], [15.0, 16.0, 17.0]],
-                    [[18.0, 19.0, 20.0], [21.0, 22.0, 23.0]],
-                ]
-            ),
-            torch.tensor(
-                [
-                    [[100.0, 200.0, 300.0], [400.0, 500.0, 600.0]],
-                    [[700.0, 800.0, 900.0], [1000.0, 1100.0, 1200.0]],
-                ]
-            ),
-            torch.full((2, 2, 3), 5.0),
-        ]
-        mock_linear.return_value = torch.tensor([1000.0, 2000.0])
         result = _resnet_block(x, block, time_embedding)
-        self.assertTrue(
-            torch.equal(
-                result,
-                torch.tensor(
-                    [
-                        [[105.0, 205.0, 305.0], [405.0, 505.0, 605.0]],
-                        [[705.0, 805.0, 905.0], [1005.0, 1105.0, 1205.0]],
-                    ]
-                ),
-            )
+        self.assertEqual(result, mock_resnet_block.return_value)
+        mock_resnet_block.assert_called_once_with(
+            {"weight": "in norm weight", "bias": "in norm bias"},
+            {"weight": "in conv weight", "bias": "in conv bias"},
+            {"weight": "out norm weight", "bias": "out norm bias"},
+            {"weight": "out conv weight", "bias": "out conv bias"},
+            {"weight": "skip weight", "bias": "skip bias"},
+            x,
+            groups=32,
+            padding=1,
+            embedding=time_embedding,
+            embedding_layer={"weight": "emb weight", "bias": "emb bias"},
         )
-        self.assertEqual(
-            [call[0][:2] for call in mock_norm.call_args_list],
-            [("in norm weight", "in norm bias"), ("out norm weight", "out norm bias")],
-        )
-        self.assertTrue(torch.equal(mock_norm.call_args_list[0][0][2], x))
-        self.assertTrue(
-            torch.equal(
-                mock_norm.call_args_list[1][0][2],
-                torch.tensor(
-                    [
-                        [[1012.0, 1013.0, 1014.0], [1015.0, 1016.0, 1017.0]],
-                        [[2018.0, 2019.0, 2020.0], [2021.0, 2022.0, 2023.0]],
-                    ]
-                ),
-            )
-        )
-        self.assertEqual(
-            [call[1] for call in mock_norm.call_args_list],
-            [{"groups": 32}, {"groups": 32}],
-        )
-        self.assertTrue(
-            torch.equal(mock_silu.call_args_list[0][0][0], torch.full((2, 2, 3), 10.0))
-        )
-        self.assertTrue(torch.equal(mock_silu.call_args_list[1][0][0], time_embedding))
-        self.assertTrue(
-            torch.equal(mock_silu.call_args_list[2][0][0], torch.full((2, 2, 3), 30.0))
-        )
-        self.assertEqual(
-            mock_linear.call_args_list[0][0][:2], ("emb weight", "emb bias")
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_linear.call_args_list[0][0][2], torch.tensor([1.0, 2.0, 3.0, 4.0])
-            )
-        )
-        self.assertEqual(
-            [call[0][:2] for call in mock_convolution.call_args_list],
-            [
-                ("in conv weight", "in conv bias"),
-                ("out conv weight", "out conv bias"),
-                ("skip weight", "skip bias"),
-            ],
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[0][0][2], torch.full((2, 2, 3), 11.0)
-            )
-        )
-        self.assertTrue(
-            torch.equal(
-                mock_convolution.call_args_list[1][0][2], torch.full((2, 2, 3), 31.0)
-            )
-        )
-        self.assertEqual(
-            [call[1] for call in mock_convolution.call_args_list],
-            [{"padding": 1}, {"padding": 1}, {}],
-        )
-        self.assertTrue(torch.equal(mock_convolution.call_args_list[2][0][2], x))
 
 
 class TransformerTests(TestCase):

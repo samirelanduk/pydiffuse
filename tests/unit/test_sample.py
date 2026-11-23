@@ -8,9 +8,10 @@ from pydiffuse.sample import _predict_noise, _remove_noise, sample_euler, sample
 
 
 class SampleEulerTests(TestCase):
+    @patch("pydiffuse.sample.get_unet_tensors")
     @patch("pydiffuse.sample._predict_noise")
     @patch("pydiffuse.sample._remove_noise")
-    def test_sample_euler(self, mock_remove_noise, mock_predict_noise):
+    def test_sample_euler(self, mock_remove_noise, mock_predict_noise, mock_tensors):
         positive = Mock(torch.Tensor)
         negative = Mock(torch.Tensor)
         latent = Mock(torch.Tensor)
@@ -19,11 +20,28 @@ class SampleEulerTests(TestCase):
         mock_remove_noise.side_effect = ["latent 1", "latent 2"]
         result = sample_euler(positive, negative, latent, model, [0.9, 0.5, 0.0])
         self.assertEqual(result, "latent 2")
+        mock_tensors.assert_called_once_with(model, latent.device)
         self.assertEqual(
             [call[0] for call in mock_predict_noise.call_args_list],
             [
-                (latent, 0.9, positive, negative, model, 1.0),
-                ("latent 1", 0.5, positive, negative, model, 1.0),
+                (
+                    latent,
+                    0.9,
+                    positive,
+                    negative,
+                    model,
+                    mock_tensors.return_value,
+                    1.0,
+                ),
+                (
+                    "latent 1",
+                    0.5,
+                    positive,
+                    negative,
+                    model,
+                    mock_tensors.return_value,
+                    1.0,
+                ),
             ],
         )
         self.assertEqual(
@@ -34,9 +52,12 @@ class SampleEulerTests(TestCase):
             ],
         )
 
+    @patch("pydiffuse.sample.get_unet_tensors")
     @patch("pydiffuse.sample._predict_noise")
     @patch("pydiffuse.sample._remove_noise")
-    def test_sample_euler_with_cfg(self, mock_remove_noise, mock_predict_noise):
+    def test_sample_euler_with_cfg(
+        self, mock_remove_noise, mock_predict_noise, mock_tensors
+    ):
         positive = Mock(torch.Tensor)
         negative = Mock(torch.Tensor)
         latent = Mock(torch.Tensor)
@@ -47,11 +68,28 @@ class SampleEulerTests(TestCase):
             positive, negative, latent, model, [0.9, 0.5, 0.0], cfg=7.0
         )
         self.assertEqual(result, "latent 2")
+        mock_tensors.assert_called_once_with(model, latent.device)
         self.assertEqual(
             [call[0] for call in mock_predict_noise.call_args_list],
             [
-                (latent, 0.9, positive, negative, model, 7.0),
-                ("latent 1", 0.5, positive, negative, model, 7.0),
+                (
+                    latent,
+                    0.9,
+                    positive,
+                    negative,
+                    model,
+                    mock_tensors.return_value,
+                    7.0,
+                ),
+                (
+                    "latent 1",
+                    0.5,
+                    positive,
+                    negative,
+                    model,
+                    mock_tensors.return_value,
+                    7.0,
+                ),
             ],
         )
         self.assertEqual(
@@ -64,9 +102,10 @@ class SampleEulerTests(TestCase):
 
 
 class SampleHeunTests(TestCase):
+    @patch("pydiffuse.sample.get_unet_tensors")
     @patch("pydiffuse.sample._predict_noise")
     @patch("pydiffuse.sample._remove_noise")
-    def test_sample_heun(self, mock_remove_noise, mock_predict_noise):
+    def test_sample_heun(self, mock_remove_noise, mock_predict_noise, mock_tensors):
         positive = Mock(torch.Tensor)
         negative = Mock(torch.Tensor)
         latent = Mock(torch.Tensor)
@@ -79,12 +118,15 @@ class SampleHeunTests(TestCase):
         mock_remove_noise.side_effect = ["trial 1", "latent 1", "latent 2"]
         result = sample_heun(positive, negative, latent, model, [0.9, 0.5, 0.0])
         self.assertEqual(result, "latent 2")
+        mock_tensors.assert_called_once_with(model, latent.device)
         self.assertEqual(
             [call[0][0:2] for call in mock_predict_noise.call_args_list],
             [(latent, 0.9), ("trial 1", 0.5), ("latent 1", 0.5)],
         )
         for call in mock_predict_noise.call_args_list:
-            self.assertEqual(call[0][2:], (positive, negative, model, 1.0))
+            self.assertEqual(
+                call[0][2:], (positive, negative, model, mock_tensors.return_value, 1.0)
+            )
         self.assertEqual(
             [call[0][0] for call in mock_remove_noise.call_args_list],
             [latent, latent, "latent 1"],
@@ -98,9 +140,12 @@ class SampleHeunTests(TestCase):
             [[1.0, 2.0], [2.0, 4.0], [5.0, 5.0]],
         )
 
+    @patch("pydiffuse.sample.get_unet_tensors")
     @patch("pydiffuse.sample._predict_noise")
     @patch("pydiffuse.sample._remove_noise")
-    def test_sample_heun_with_cfg(self, mock_remove_noise, mock_predict_noise):
+    def test_sample_heun_with_cfg(
+        self, mock_remove_noise, mock_predict_noise, mock_tensors
+    ):
         positive = Mock(torch.Tensor)
         negative = Mock(torch.Tensor)
         latent = Mock(torch.Tensor)
@@ -115,12 +160,15 @@ class SampleHeunTests(TestCase):
             positive, negative, latent, model, [0.9, 0.5, 0.0], cfg=7.0
         )
         self.assertEqual(result, "latent 2")
+        mock_tensors.assert_called_once_with(model, latent.device)
         self.assertEqual(
             [call[0][0:2] for call in mock_predict_noise.call_args_list],
             [(latent, 0.9), ("trial 1", 0.5), ("latent 1", 0.5)],
         )
         for call in mock_predict_noise.call_args_list:
-            self.assertEqual(call[0][2:], (positive, negative, model, 7.0))
+            self.assertEqual(
+                call[0][2:], (positive, negative, model, mock_tensors.return_value, 7.0)
+            )
         self.assertEqual(
             [call[0][0] for call in mock_remove_noise.call_args_list],
             [latent, latent, "latent 1"],
@@ -142,12 +190,18 @@ class PredictNoiseTests(TestCase):
         positive = Mock(torch.Tensor)
         negative = Mock(torch.Tensor)
         model = Mock(safetensors.safe_open)
+        model_tensors = {"weights": "weights"}
         mock_unet.side_effect = [torch.tensor([1.0, 2.0]), torch.tensor([0.5, 0.5])]
-        result = _predict_noise(latent, 0.5, positive, negative, model, 3.0)
+        result = _predict_noise(
+            latent, 0.5, positive, negative, model, model_tensors, 3.0
+        )
         self.assertEqual(result.tolist(), [2.0, 5.0])
         self.assertEqual(
             [call[0] for call in mock_unet.call_args_list],
-            [(latent, 0.5, positive, model), (latent, 0.5, negative, model)],
+            [
+                (latent, 0.5, positive, model, model_tensors),
+                (latent, 0.5, negative, model, model_tensors),
+            ],
         )
 
 
